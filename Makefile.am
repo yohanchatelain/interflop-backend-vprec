@@ -1,3 +1,5 @@
+ACLOCAL_AMFLAGS=-I m4
+SUBDIRS=common
 lib_LTLIBRARIES = libinterflop_vprec.la
 libinterflop_vprec_la_SOURCES = interflop_vprec.c  common/logger.c
 libinterflop_vprec_la_CFLAGS = -DBACKEND_HEADER="interflop_vprec"
