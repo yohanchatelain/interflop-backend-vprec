@@ -1,0 +1,760 @@
+/*****************************************************************************\
+ *                                                                           *\
+ *  This file is part of the Verificarlo project,                            *\
+ *  under the Apache License v2.0 with LLVM Exceptions.                      *\
+ *  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception.                 *\
+ *  See https://llvm.org/LICENSE.txt for license information.                *\
+ *                                                                           *\
+ *                                                                           *\
+ *  Copyright (c) 2015                                                       *\
+ *     Universite de Versailles St-Quentin-en-Yvelines                       *\
+ *     CMLA, Ecole Normale Superieure de Cachan                              *\
+ *                                                                           *\
+ *  Copyright (c) 2018                                                       *\
+ *     Universite de Versailles St-Quentin-en-Yvelines                       *\
+ *                                                                           *\
+ *  Copyright (c) 2019-2022                                                  *\
+ *     Verificarlo Contributors                                              *\
+ *                                                                           *\
+ ****************************************************************************/
+
+#include <argp.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "common/interflop.h"
+#include "common/vfc_hashmap.h"
+#include "common/vprec_tools.h"
+#include "interflop_vprec.h"
+#include "interflop_vprec_function_instrumentation.h"
+
+/******************** VPREC FUNCTIONS INSTRUMENTATION (VFI) **************
+ * The following set of functions is used to apply vprec on instrumented
+ * functions. For that we need a hashmap to stock data and reading and
+ * writing functions to get and save them. Enter and exit functions are
+ * called before and after the instrumented function and allow us to set
+ * the desired precision or to round arguments, depending on the mode.
+ *************************************************************************/
+
+/* instrumentation modes' names */
+static const char *VPREC_INST_MODE_STR[] = {[vprecinst_arg] = "arguments",
+                                            [vprecinst_op] = "operations",
+                                            [vprecinst_all] = "all",
+                                            [vprecinst_none] = "none"};
+
+static const char key_instrument_str[] = "instrument";
+static const char key_input_file_str[] = "prec-input-file";
+static const char key_output_file_str[] = "prec-output-file";
+static const char key_log_file_str[] = "prec-log-file";
+
+/* Setter functions for variables */
+
+void _set_vprec_input_file(const char *input_file, void *context) {
+  t_context *ctx = (t_context *)context;
+  ctx->vfi->vprec_input_file = input_file;
+}
+
+void _set_vprec_output_file(const char *output_file, void *context) {
+  t_context *ctx = (t_context *)context;
+  ctx->vfi->vprec_output_file = output_file;
+}
+
+void _set_vprec_log_file(const char *log_file, void *context) {
+
+  t_context *ctx = (t_context *)context;
+  ctx->vfi->vprec_log_file = fopen(log_file, "w");
+  if (ctx->vfi->vprec_log_file == NULL) {
+    logger_error("Log file can't be written");
+  }
+}
+
+void _set_vprec_inst_mode(vprec_inst_mode mode, void *context) {
+  t_context *ctx = (t_context *)context;
+  if (mode >= _vprecinst_end_) {
+    logger_error("invalid instrumentation mode provided, must be one of:"
+                 "{arguments, operations, all, none}.");
+  } else {
+    ctx->vfi->vprec_inst_mode = mode;
+  }
+}
+
+/* Argument parser functions */
+
+void _parse_key_instrument(char *arg, t_context *ctx) {
+  /* instrumentation mode */
+  if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
+    _set_vprec_inst_mode(vprecinst_arg, ctx);
+  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_op], arg) == 0) {
+    _set_vprec_inst_mode(vprecinst_op, ctx);
+  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_all], arg) == 0) {
+    _set_vprec_inst_mode(vprecinst_all, ctx);
+  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_none], arg) == 0) {
+    _set_vprec_inst_mode(vprecinst_none, ctx);
+  } else {
+    logger_error("--%s invalid value provided, must be one of: "
+                 "{arguments, operations, all}.",
+                 key_instrument_str);
+  }
+}
+
+static error_t parse_opt(int key, char *arg, struct argp_state *state) {
+  t_context *ctx = (t_context *)state->input;
+  switch (key) {
+  case KEY_INPUT_FILE:
+    /* input file */
+    _set_vprec_input_file(arg, ctx);
+    break;
+  case KEY_OUTPUT_FILE:
+    /* output file */
+    _set_vprec_output_file(arg, ctx);
+    break;
+  case KEY_LOG_FILE:
+    /* log file */
+    _set_vprec_log_file(arg, ctx);
+    break;
+  case KEY_INSTRUMENT:
+    _parse_key_instrument(arg, ctx);
+    break;
+
+  default:
+    return ARGP_ERR_UNKNOWN;
+  }
+  return 0;
+}
+
+static struct argp_option options[] = {
+    {key_input_file_str, KEY_INPUT_FILE, "INPUT", 0,
+     "input file with the precision configuration to use", 0},
+    {key_output_file_str, KEY_OUTPUT_FILE, "OUTPUT", 0,
+     "output file where the precision profile is written", 0},
+    {key_log_file_str, KEY_LOG_FILE, "LOG", 0,
+     "log file where input/output informations are written", 0},
+    {key_instrument_str, KEY_INSTRUMENT, "INSTRUMENTATION", 0,
+     "select VPREC instrumentation mode among {arguments, operations, full}",
+     0},
+    {0}};
+
+struct argp vfi_argp = {options, parse_opt, "", "", NULL, NULL, NULL};
+
+void _vfi_print_information_header(void *context) {
+  t_context *ctx = (t_context *)context;
+  logger_info("\t%s = %s\n", key_instrument_str,
+              VPREC_INST_MODE_STR[ctx->vfi->vprec_inst_mode]);
+  logger_info("\t%s = %s\n", key_input_file_str, ctx->vfi->vprec_input_file);
+  logger_info("\t%s = %s\n", key_output_file_str, ctx->vfi->vprec_output_file);
+  logger_info("\t%s = %s\n", key_log_file_str, ctx->vfi->vprec_log_file);
+}
+
+/* Core functions */
+
+// Write the hashmap in the given file
+void _vfi_write_hasmap(FILE *fout, t_context *ctx) {
+  for (size_t ii = 0; ii < ctx->vfi->map->capacity; ii++) {
+    if (get_value_at(ctx->vfi->map->items, ii) != 0 &&
+        get_value_at(ctx->vfi->map->items, ii) != 0) {
+      _vfi_t *function = (_vfi_t *)get_value_at(ctx->vfi->map->items, ii);
+
+      fprintf(fout, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+              function->id, function->isLibraryFunction,
+              function->isIntrinsicFunction, function->useFloat,
+              function->useDouble, function->OpsPrec64, function->OpsRange64,
+              function->OpsPrec32, function->OpsRange32,
+              function->nb_input_args, function->nb_output_args,
+              function->n_calls);
+      for (int i = 0; i < function->nb_input_args; i++) {
+        fprintf(fout, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                function->input_args[i].arg_id,
+                function->input_args[i].data_type,
+                function->input_args[i].mantissa_length,
+                function->input_args[i].exponent_length,
+                function->input_args[i].min_range,
+                function->input_args[i].max_range);
+      }
+      for (int i = 0; i < function->nb_output_args; i++) {
+        fprintf(fout, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                function->output_args[i].arg_id,
+                function->output_args[i].data_type,
+                function->output_args[i].mantissa_length,
+                function->output_args[i].exponent_length,
+                function->output_args[i].min_range,
+                function->output_args[i].max_range);
+      }
+    }
+  }
+}
+
+// Read and initialize the hashmap from the given file
+void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
+  _vfi_t function;
+
+  while (fscanf(fin, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                function.id, &function.isLibraryFunction,
+                &function.isIntrinsicFunction, &function.useFloat,
+                &function.useDouble, &function.OpsPrec64, &function.OpsRange64,
+                &function.OpsPrec32, &function.OpsRange32,
+                &function.nb_input_args, &function.nb_output_args,
+                &function.n_calls) == 12) {
+    // allocate space for input arguments
+    function.input_args =
+        malloc(function.nb_input_args * sizeof(_vfi_argument_data_t));
+    // allocate space for output arguments
+    function.output_args =
+        malloc(function.nb_output_args * sizeof(_vfi_argument_data_t));
+
+    // get input arguments precision
+    for (int i = 0; i < function.nb_input_args; i++) {
+      if (!fscanf(fin, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                  function.input_args[i].arg_id,
+                  &function.input_args[i].data_type,
+                  &function.input_args[i].mantissa_length,
+                  &function.input_args[i].exponent_length,
+                  &function.input_args[i].min_range,
+                  &function.input_args[i].max_range)) {
+        logger_error("Can't read input arguments of %s\n", function.id);
+      }
+    }
+
+    // get output arguments precision
+    for (int i = 0; i < function.nb_output_args; i++) {
+      if (!fscanf(fin, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                  function.output_args[i].arg_id,
+                  &function.output_args[i].data_type,
+                  &function.output_args[i].mantissa_length,
+                  &function.output_args[i].exponent_length,
+                  &function.output_args[i].min_range,
+                  &function.output_args[i].max_range)) {
+        logger_error("Can't read output arguments of %s\n", function.id);
+      }
+    }
+
+    // insert in the hashmap
+    _vfi_t *address = malloc(sizeof(_vfi_t));
+    (*address) = function;
+    vfc_hashmap_insert(ctx->vfi->map, vfc_hashmap_str_function(function.id),
+                       address);
+  }
+}
+
+// Print str in vprec_log_file with the correct offset
+#define _vfi_print_log(ctx, _vprec_str, ...)                                   \
+  ({                                                                           \
+    if (ctx->vfi->vprec_log_file != NULL) {                                    \
+      for (size_t _vprec_d = 0; _vprec_d < ctx->vfi->vprec_log_depth;          \
+           _vprec_d++)                                                         \
+        fprintf(ctx->vfi->vprec_log_file, "\t");                               \
+      fprintf(ctx->vfi->vprec_log_file, _vprec_str, ##__VA_ARGS__);            \
+    }                                                                          \
+  })
+
+/* allocate the context */
+void _vfi_alloc_context(void *context) {
+  t_context *ctx = (t_context *)context;
+  ctx->vfi = (t_context_vfi *)malloc(sizeof(t_context_vfi));
+}
+
+/* initialize the context */
+void _vfi_init_context(void *context) {
+  t_context *ctx = (t_context *)context;
+  ctx->vfi->map = NULL;
+  ctx->vfi->vprec_input_file = NULL;
+  ctx->vfi->vprec_output_file = NULL;
+  ctx->vfi->vprec_log_file = NULL;
+  ctx->vfi->vprec_inst_mode = VPREC_INST_MODE_DEFAULT;
+  ctx->vfi->vprec_log_depth = 0;
+}
+
+/* initialize the variables to run vprec function instrumentation */
+void _vfi_init(void *context) {
+  t_context *ctx = (t_context *)context;
+  /* Initialize the vprec_function_map */
+
+  ctx->vfi->map = vfc_hashmap_create();
+  /* read the hashmap */
+  if (ctx->vfi->vprec_input_file != NULL) {
+    FILE *f = fopen(ctx->vfi->vprec_input_file, "r");
+    if (f != NULL) {
+      _vfi_read_hasmap(f, ctx);
+      fclose(f);
+    } else {
+      logger_error("Input file can't be found");
+    }
+  }
+}
+
+/* free objects and close files */
+void _vfi_finalize(void *context) {
+  t_context *ctx = (t_context *)context;
+
+  /* save the hashmap */
+  if (ctx->vfi->vprec_output_file != NULL) {
+    FILE *f = fopen(ctx->vfi->vprec_output_file, "w");
+    if (f != NULL) {
+      _vfi_write_hasmap(f, ctx);
+      fclose(f);
+    } else {
+      logger_error("Output file can't be written");
+    }
+  }
+
+  /* close log file */
+  if (ctx->vfi->vprec_log_file != NULL) {
+    fclose(ctx->vfi->vprec_log_file);
+  }
+
+  /* free vprec_function_map */
+  vfc_hashmap_free(ctx->vfi->map);
+
+  /* destroy vprec_function_map */
+  vfc_hashmap_destroy(ctx->vfi->map);
+}
+
+// vprec function instrumentation
+// Set precision for internal operations and round input arguments for a given
+// function call
+void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
+                         int nb_args, va_list ap) {
+  t_context *ctx = (t_context *)context;
+
+  interflop_function_info_t *function_info = stack->array[stack->top];
+
+  if (function_info == NULL)
+    logger_error("Call stack error\n");
+
+  _vfi_t *function_inst = vfc_hashmap_get(
+      ctx->vfi->map, vfc_hashmap_str_function(function_info->id));
+
+  // if the function is not in the hashtable
+  if (function_inst == NULL) {
+    function_inst = malloc(sizeof(_vfi_t));
+
+    // initialize the structure
+    strcpy(function_inst->id, function_info->id);
+    function_inst->isLibraryFunction = function_info->isLibraryFunction;
+    function_inst->isIntrinsicFunction = function_info->isIntrinsicFunction;
+    function_inst->useFloat = function_info->useFloat;
+    function_inst->useDouble = function_info->useDouble;
+    function_inst->OpsRange64 = VPREC_RANGE_BINARY64_DEFAULT;
+    function_inst->OpsPrec64 = VPREC_PRECISION_BINARY64_DEFAULT;
+    function_inst->OpsRange32 = VPREC_RANGE_BINARY32_DEFAULT;
+    function_inst->OpsPrec32 = VPREC_PRECISION_BINARY32_DEFAULT;
+    function_inst->nb_input_args = 0;
+    function_inst->input_args = NULL;
+    function_inst->nb_output_args = 0;
+    function_inst->output_args = NULL;
+    function_inst->n_calls = 0;
+
+    // insert the function in the hashmap
+    vfc_hashmap_insert(ctx->vfi->map,
+                       vfc_hashmap_str_function(function_info->id),
+                       function_inst);
+  }
+
+  // increment the number of calls
+  function_inst->n_calls++;
+
+  // set internal operations precision with custom values depending on the mode
+  if (!function_info->isLibraryFunction &&
+      !function_info->isIntrinsicFunction &&
+      ctx->vfi->vprec_inst_mode != vprecinst_arg &&
+      ctx->vfi->vprec_inst_mode != vprecinst_none) {
+    _set_vprec_precision_binary64(function_inst->OpsPrec64, ctx);
+    _set_vprec_range_binary64(function_inst->OpsRange64, ctx);
+    _set_vprec_precision_binary32(function_inst->OpsPrec32, ctx);
+    _set_vprec_range_binary32(function_inst->OpsRange32, ctx);
+  }
+
+  // treatment of arguments
+  int new_flag = (function_inst->input_args == NULL && nb_args > 0);
+
+  // print function info in log
+  _vfi_print_log(ctx, "\n");
+  _vfi_print_log(ctx, "enter in %s\t%d\t%d\t%d\t%d\n", function_inst->id,
+                 function_inst->OpsPrec64, function_inst->OpsRange64,
+                 function_inst->OpsPrec32, function_inst->OpsRange32);
+
+  // allocate memory for arguments
+  if (new_flag) {
+    function_inst->input_args = malloc(sizeof(_vfi_argument_data_t) * nb_args);
+    function_inst->nb_input_args = nb_args;
+  }
+
+  // boolean which indicates if arguments should be rounded or not depending on
+  // modes
+  int mode_flag =
+      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ib)) &&
+       ((ctx->vfi->vprec_inst_mode == vprecinst_all) ||
+        (ctx->vfi->vprec_inst_mode == vprecinst_arg)) &&
+       ctx->vfi->vprec_inst_mode != vprecinst_none);
+
+  for (int i = 0; i < nb_args; i++) {
+    // get argument type, id and size
+    int type = va_arg(ap, int);
+    char *arg_id = va_arg(ap, char *);
+    unsigned int size = va_arg(ap, unsigned int);
+
+    if (new_flag) {
+      function_inst->input_args[i].data_type = type;
+      strcpy(function_inst->input_args[i].arg_id, arg_id);
+      function_inst->input_args[i].min_range = INT_MAX;
+      function_inst->input_args[i].max_range = INT_MIN;
+      function_inst->input_args[i].exponent_length =
+          (type == FDOUBLE || type == FDOUBLE_PTR)
+              ? VPREC_RANGE_BINARY64_DEFAULT
+              : VPREC_RANGE_BINARY32_DEFAULT;
+      function_inst->input_args[i].mantissa_length =
+          (type == FDOUBLE || type == FDOUBLE_PTR)
+              ? VPREC_PRECISION_BINARY64_DEFAULT
+              : VPREC_PRECISION_BINARY32_DEFAULT;
+    }
+
+    if (type == FDOUBLE) {
+      double *value = va_arg(ap, double *);
+
+      _vfi_print_log(ctx, " - %s\tinput\tdouble\t%s\t%la\t->\t",
+                     function_inst->id, arg_id, *value);
+
+      if ((!new_flag) && mode_flag) {
+        *value = _vprec_round_binary64(
+            *value, 1, context, function_inst->input_args[i].exponent_length,
+            function_inst->input_args[i].mantissa_length);
+      }
+
+      if (!(isnan(*value) || isinf(*value))) {
+        function_inst->input_args[i].min_range =
+            (floor(*value) < function_inst->input_args[i].min_range || new_flag)
+                ? floor(*value)
+                : function_inst->input_args[i].min_range;
+        function_inst->input_args[i].max_range =
+            (ceil(*value) > function_inst->input_args[i].max_range || new_flag)
+                ? ceil(*value)
+                : function_inst->input_args[i].max_range;
+      }
+
+      _vfi_print_log(ctx, "%la\t(%d, %d)\n", *value,
+                     function_inst->input_args[i].mantissa_length,
+                     function_inst->input_args[i].exponent_length);
+
+    } else if (type == FFLOAT) {
+      float *value = va_arg(ap, float *);
+
+      _vfi_print_log(ctx, " - %s\tinput\tfloat\t%s\t%a\t->\t",
+                     function_inst->id, arg_id, *value);
+
+      if ((!new_flag) && mode_flag) {
+        *value = _vprec_round_binary32(
+            *value, 1, context, function_inst->input_args[i].exponent_length,
+            function_inst->input_args[i].mantissa_length);
+      }
+
+      if (!(isnan(*value) || isinf(*value))) {
+        function_inst->input_args[i].min_range =
+            (floorf(*value) < function_inst->input_args[i].min_range ||
+             new_flag)
+                ? floorf(*value)
+                : function_inst->input_args[i].min_range;
+        function_inst->input_args[i].max_range =
+            (ceilf(*value) > function_inst->input_args[i].max_range || new_flag)
+                ? ceilf(*value)
+                : function_inst->input_args[i].max_range;
+      }
+
+      _vfi_print_log(ctx, "%a\t(%d, %d)\n", *value,
+                     function_inst->input_args[i].mantissa_length,
+                     function_inst->input_args[i].exponent_length);
+
+    } else if (type == FDOUBLE_PTR) {
+      double *value = va_arg(ap, double *);
+
+      for (unsigned int j = 0; j < size; j++, value++) {
+        if (value == NULL) {
+          _vfi_print_log(ctx,
+                         " - %s\tinput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
+                         function_inst->id, j, arg_id);
+          continue;
+        }
+
+        _vfi_print_log(ctx, " - %s\tinput[%u]\tdouble_ptr\t%s\t%la\t->\t",
+                       function_inst->id, j, arg_id, *value);
+
+        if ((!new_flag) && mode_flag) {
+          *value = _vprec_round_binary64(
+              *value, 1, context, function_inst->input_args[i].exponent_length,
+              function_inst->input_args[i].mantissa_length);
+        }
+
+        if (!(isnan(*value) || isinf(*value))) {
+          function_inst->input_args[i].min_range =
+              (floor(*value) < function_inst->input_args[i].min_range ||
+               new_flag)
+                  ? floor(*value)
+                  : function_inst->input_args[i].min_range;
+          function_inst->input_args[i].max_range =
+              (ceil(*value) > function_inst->input_args[i].max_range ||
+               new_flag)
+                  ? ceil(*value)
+                  : function_inst->input_args[i].max_range;
+        }
+
+        _vfi_print_log(ctx, "%la\t(%d, %d)\n", *value,
+                       function_inst->input_args[i].mantissa_length,
+                       function_inst->input_args[i].exponent_length);
+      }
+    } else if (type == FFLOAT_PTR) {
+      float *value = va_arg(ap, float *);
+
+      for (unsigned int j = 0; j < size; j++, value++) {
+        if (value == NULL) {
+          _vfi_print_log(ctx,
+                         " - %s\tinput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
+                         function_inst->id, j, arg_id);
+          continue;
+        }
+
+        _vfi_print_log(ctx, " - %s\tinput[%u]\tfloat_ptr\t%s\t%a\t->\t",
+                       function_inst->id, j, arg_id, *value);
+
+        if ((!new_flag) && mode_flag) {
+          *value = _vprec_round_binary32(
+              *value, 1, context, function_inst->input_args[i].exponent_length,
+              function_inst->input_args[i].mantissa_length);
+        }
+
+        if (!(isnan(*value) || isinf(*value))) {
+          function_inst->input_args[i].min_range =
+              (floorf(*value) < function_inst->input_args[i].min_range ||
+               new_flag)
+                  ? floorf(*value)
+                  : function_inst->input_args[i].min_range;
+          function_inst->input_args[i].max_range =
+              (ceilf(*value) > function_inst->input_args[i].max_range ||
+               new_flag)
+                  ? ceilf(*value)
+                  : function_inst->input_args[i].max_range;
+        }
+
+        _vfi_print_log(ctx, "%a\t(%d, %d)\n", *value,
+                       function_inst->input_args[i].mantissa_length,
+                       function_inst->input_args[i].exponent_length);
+      }
+    }
+  }
+
+  // increment depth
+  ctx->vfi->vprec_log_depth++;
+}
+
+// vprec function instrumentation
+// Set precision for internal operations and round output arguments for a given
+// function call
+void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
+                        int nb_args, va_list ap) {
+  t_context *ctx = (t_context *)context;
+
+  interflop_function_info_t *function_info = stack->array[stack->top];
+
+  // decrement depth
+  ctx->vfi->vprec_log_depth--;
+
+  if (function_info == NULL)
+    logger_error("Call stack error \n");
+
+  _vfi_t *function_inst = vfc_hashmap_get(
+      ctx->vfi->map, vfc_hashmap_str_function(function_info->id));
+
+  // set internal operations precision with parent function values
+  if (stack->array[stack->top + 1] != NULL) {
+    interflop_function_info_t *parent_info = stack->array[stack->top + 1];
+
+    if (!parent_info->isLibraryFunction && !parent_info->isIntrinsicFunction &&
+        ctx->vfi->vprec_inst_mode != vprecinst_arg &&
+        ctx->vfi->vprec_inst_mode != vprecinst_none) {
+
+      _vfi_t *function_parent = vfc_hashmap_get(
+          ctx->vfi->map, vfc_hashmap_str_function(parent_info->id));
+
+      if (function_parent != NULL) {
+        _set_vprec_precision_binary64(function_parent->OpsPrec64, ctx);
+        _set_vprec_range_binary64(function_parent->OpsRange64, ctx);
+        _set_vprec_precision_binary32(function_parent->OpsPrec32, ctx);
+        _set_vprec_range_binary32(function_parent->OpsRange32, ctx);
+      }
+    }
+  }
+
+  // treatment of arguments
+  int new_flag = (function_inst->output_args == NULL && nb_args > 0);
+
+  // print function info in log
+  _vfi_print_log(ctx, "exit of %s\t%d\t%d\t%d\t%d\n", function_inst->id,
+                 function_inst->OpsPrec64, function_inst->OpsRange64,
+                 function_inst->OpsPrec32, function_inst->OpsRange32);
+
+  // allocate memory for arguments
+  if (new_flag) {
+    function_inst->output_args = malloc(sizeof(_vfi_argument_data_t) * nb_args);
+    function_inst->nb_output_args = nb_args;
+  }
+
+  // boolean which indicates if arguments should be rounded or not depending on
+  // modes
+  int mode_flag =
+      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ob)) &&
+       (ctx->vfi->vprec_inst_mode == vprecinst_all ||
+        ctx->vfi->vprec_inst_mode == vprecinst_arg) &&
+       ctx->vfi->vprec_inst_mode != vprecinst_none);
+
+  for (int i = 0; i < nb_args; i++) {
+    int type = va_arg(ap, int);
+    char *arg_id = va_arg(ap, char *);
+    unsigned int size = va_arg(ap, unsigned int);
+
+    if (new_flag) {
+      // initialize arguments data
+      function_inst->output_args[i].data_type = type;
+      strcpy(function_inst->output_args[i].arg_id, arg_id);
+      function_inst->output_args[i].exponent_length =
+          (type == FDOUBLE || type == FDOUBLE_PTR)
+              ? VPREC_RANGE_BINARY64_DEFAULT
+              : VPREC_RANGE_BINARY32_DEFAULT;
+      function_inst->output_args[i].mantissa_length =
+          (type == FDOUBLE || type == FDOUBLE_PTR)
+              ? VPREC_PRECISION_BINARY64_DEFAULT
+              : VPREC_PRECISION_BINARY32_DEFAULT;
+      function_inst->output_args[i].min_range = INT_MAX;
+      function_inst->output_args[i].max_range = INT_MIN;
+    }
+
+    if (type == FDOUBLE) {
+      double *value = va_arg(ap, double *);
+
+      _vfi_print_log(ctx, " - %s\toutput\tdouble\t%s\t%la\t->\t",
+                     function_inst->id, arg_id, *value);
+
+      if ((!new_flag) && mode_flag) {
+        *value = _vprec_round_binary64(
+            *value, 0, context, function_inst->output_args[i].exponent_length,
+            function_inst->output_args[i].mantissa_length);
+      }
+
+      if (!(isnan(*value) || isinf(*value))) {
+        function_inst->output_args[i].min_range =
+            (floor(*value) < function_inst->output_args[i].min_range ||
+             new_flag)
+                ? floor(*value)
+                : function_inst->output_args[i].min_range;
+        function_inst->output_args[i].max_range =
+            (ceil(*value) > function_inst->output_args[i].max_range || new_flag)
+                ? ceil(*value)
+                : function_inst->output_args[i].max_range;
+      }
+
+      _vfi_print_log(ctx, "%la\t(%d,%d)\n", *value,
+                     function_inst->output_args[i].mantissa_length,
+                     function_inst->output_args[i].exponent_length);
+    } else if (type == FFLOAT) {
+      float *value = va_arg(ap, float *);
+
+      _vfi_print_log(ctx, " - %s\toutput\tfloat\t%s\t%a\t->\t",
+                     function_inst->id, arg_id, *value);
+
+      if ((!new_flag) && mode_flag) {
+        *value = _vprec_round_binary32(
+            *value, 0, context, function_inst->output_args[i].exponent_length,
+            function_inst->output_args[i].mantissa_length);
+      }
+
+      if (!(isnan(*value) || isinf(*value))) {
+        function_inst->output_args[i].min_range =
+            (floorf(*value) < function_inst->output_args[i].min_range ||
+             new_flag)
+                ? floorf(*value)
+                : function_inst->output_args[i].min_range;
+        function_inst->output_args[i].max_range =
+            (ceilf(*value) > function_inst->output_args[i].max_range ||
+             new_flag)
+                ? ceilf(*value)
+                : function_inst->output_args[i].max_range;
+      }
+
+      _vfi_print_log(ctx, "%a\t(%d, %d)\n", *value,
+                     function_inst->output_args[i].mantissa_length,
+                     function_inst->output_args[i].exponent_length);
+    } else if (type == FDOUBLE_PTR) {
+      double *value = va_arg(ap, double *);
+
+      for (unsigned int j = 0; j < size; j++, value++) {
+        if (value == NULL) {
+          _vfi_print_log(ctx,
+                         " - %s\toutput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
+                         function_inst->id, j, arg_id);
+          continue;
+        }
+
+        _vfi_print_log(ctx, " - %s\toutput[%u]\tdouble_ptr\t%s\t%la\t->\t",
+                       function_inst->id, j, arg_id, *value);
+
+        if ((!new_flag) && mode_flag) {
+          *value = _vprec_round_binary64(
+              *value, 0, context, function_inst->output_args[i].exponent_length,
+              function_inst->output_args[i].mantissa_length);
+        }
+
+        if (!(isnan(*value) || isinf(*value))) {
+          function_inst->output_args[i].min_range =
+              (floor(*value) < function_inst->output_args[i].min_range ||
+               new_flag)
+                  ? floor(*value)
+                  : function_inst->output_args[i].min_range;
+          function_inst->output_args[i].max_range =
+              (ceil(*value) > function_inst->output_args[i].max_range ||
+               new_flag)
+                  ? ceil(*value)
+                  : function_inst->output_args[i].max_range;
+        }
+
+        _vfi_print_log(ctx, "%la\t(%d,%d)\n", *value,
+                       function_inst->output_args[i].mantissa_length,
+                       function_inst->output_args[i].exponent_length);
+      }
+    } else if (type == FFLOAT_PTR) {
+      float *value = va_arg(ap, float *);
+
+      for (unsigned int j = 0; j < size; j++, value++) {
+        if (value == NULL) {
+          _vfi_print_log(ctx,
+                         " - %s\toutput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
+                         function_inst->id, j, arg_id);
+          continue;
+        }
+
+        _vfi_print_log(ctx, " - %s\toutput[%u]\tfloat_ptr\t%s\t%a\t->\t",
+                       function_inst->id, j, arg_id, *value);
+
+        if ((!new_flag) && mode_flag) {
+          *value = _vprec_round_binary32(
+              *value, 0, context, function_inst->output_args[i].exponent_length,
+              function_inst->output_args[i].mantissa_length);
+        }
+
+        if (!(isnan(*value) || isinf(*value))) {
+          function_inst->output_args[i].min_range =
+              (floorf(*value) < function_inst->output_args[i].min_range ||
+               new_flag)
+                  ? floorf(*value)
+                  : function_inst->output_args[i].min_range;
+          function_inst->output_args[i].max_range =
+              (ceilf(*value) > function_inst->output_args[i].max_range ||
+               new_flag)
+                  ? ceilf(*value)
+                  : function_inst->output_args[i].max_range;
+        }
+
+        _vfi_print_log(ctx, "%a\t(%d, %d)\n", *value,
+                       function_inst->output_args[i].mantissa_length,
+                       function_inst->output_args[i].exponent_length);
+      }
+    }
+  }
+  _vfi_print_log(ctx, "\n");
+}

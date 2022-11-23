@@ -43,170 +43,45 @@
 #include "common/logger.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
-
-typedef enum {
-  KEY_PREC_B32,
-  KEY_PREC_B64,
-  KEY_RANGE_B32,
-  KEY_RANGE_B64,
-  KEY_ERR_EXP,
-  KEY_INPUT_FILE,
-  KEY_OUTPUT_FILE,
-  KEY_LOG_FILE,
-  KEY_PRESET,
-  KEY_MODE = 'm',
-  KEY_ERR_MODE = 'e',
-  KEY_INSTRUMENT = 'i',
-  KEY_DAZ = 'd',
-  KEY_FTZ = 'f'
-} key_args;
+#include "interflop_vprec.h"
+#include "interflop_vprec_function_instrumentation.h"
 
 static const char key_prec_b32_str[] = "precision-binary32";
 static const char key_prec_b64_str[] = "precision-binary64";
 static const char key_range_b32_str[] = "range-binary32";
 static const char key_range_b64_str[] = "range-binary64";
-static const char key_input_file_str[] = "prec-input-file";
-static const char key_output_file_str[] = "prec-output-file";
-static const char key_log_file_str[] = "prec-log-file";
 static const char key_preset_str[] = "preset";
 static const char key_mode_str[] = "mode";
 static const char key_err_mode_str[] = "error-mode";
 static const char key_err_exp_str[] = "max-abs-error-exponent";
-static const char key_instrument_str[] = "instrument";
 static const char key_daz_str[] = "daz";
 static const char key_ftz_str[] = "ftz";
 
 /* variables that control precision, range and mode */
 
-/* define the available VPREC modes of operation */
-typedef enum {
-  vprecmode_ieee,
-  vprecmode_full,
-  vprecmode_ib,
-  vprecmode_ob,
-  _vprecmode_end_
-} vprec_mode;
-
 /* Modes' names */
-static const char *VPREC_MODE_STR[] = {"ieee", "full", "ib", "ob"};
+static const char *VPREC_MODE_STR[] = {[vprecmode_ieee] = "ieee",
+                                       [vprecmode_full] = "full",
+                                       [vprecmode_ib] = "ib",
+                                       [vprecmode_ob] = "ob"};
 
-/* define the available error modes */
-typedef enum {
-  vprec_err_mode_rel,
-  vprec_err_mode_abs,
-  vprec_err_mode_all,
-  _vprec_err_mode_end_
-} vprec_err_mode;
+static const char *VPREC_ERR_MODE_STR[] = {[vprec_err_mode_rel] = "rel",
+                                           [vprec_err_mode_abs] = "abs",
+                                           [vprec_err_mode_all] = "all"};
 
-static const char *VPREC_ERR_MODE_STR[] = {"rel", "abs", "all"};
-
-/* define the possible VPREC operation */
-typedef enum {
-  vprec_add = '+',
-  vprec_sub = '-',
-  vprec_mul = '*',
-  vprec_div = '/',
-} vprec_operation;
-
-/* define the possible VPREC preset */
-typedef enum {
-  preset_binary16,
-  preset_binary32,
-  preset_bfloat16,
-  preset_tensorfloat,
-  preset_fp24,
-  preset_PXR24,
-  _vprec_preset_end_
-} vprec_preset;
-
-typedef enum {
-  preset_precision_binary16 = 10,
-  preset_precision_binary32 = 23,
-  preset_precision_bfloat16 = 7,
-  preset_precision_tensorfloat = 10,
-  preset_precision_fp24 = 16,
-  preset_precision_PXR24 = 15,
-  _vprec_preset_precision_end_
-} vprec_preset_precision;
-
-typedef enum {
-  preset_range_binary16 = 5,
-  preset_range_binary32 = 8,
-  preset_range_bfloat16 = 8,
-  preset_range_tensorfloat = 8,
-  preset_range_fp24 = 7,
-  preset_range_PXR24 = 8,
-  _vprec_preset_range_end_
-} vprec_preset_range;
-
-static const char *VPREC_PRESET_STR[] = {"binary16",    "binary32", "bfloat16",
-                                         "tensorfloat", "fp24",     "PXR24"};
-
-/* define default environment variables and default parameters */
-
-/* default values of precision and range for binary32 */
-#define VPREC_PRECISION_BINARY32_MIN 1
-#define VPREC_PRECISION_BINARY32_MAX FLOAT_PMAN_SIZE
-#define VPREC_PRECISION_BINARY32_DEFAULT FLOAT_PMAN_SIZE
-#define VPREC_RANGE_BINARY32_MIN 2
-#define VPREC_RANGE_BINARY32_MAX FLOAT_EXP_SIZE
-#define VPREC_RANGE_BINARY32_DEFAULT FLOAT_EXP_SIZE
-
-/* default values of precision and range for binary64 */
-#define VPREC_PRECISION_BINARY64_MIN 1
-#define VPREC_PRECISION_BINARY64_MAX DOUBLE_PMAN_SIZE
-#define VPREC_PRECISION_BINARY64_DEFAULT DOUBLE_PMAN_SIZE
-#define VPREC_RANGE_BINARY64_MIN 2
-#define VPREC_RANGE_BINARY64_MAX DOUBLE_EXP_SIZE
-#define VPREC_RANGE_BINARY64_DEFAULT DOUBLE_EXP_SIZE
-
-/* common default values */
-#define VPREC_MODE_DEFAULT vprecmode_ob
+static const char *VPREC_PRESET_STR[] = {[vprec_preset_binary16] = "binary16",
+                                         [vprec_preset_binary32] = "binary32",
+                                         [vprec_preset_bfloat16] = "bfloat16",
+                                         [vprec_preset_tensorfloat] =
+                                             "tensorfloat",
+                                         [vprec_preset_fp24] = "fp24",
+                                         [vprec_preset_PXR24] = "PXR24"};
 
 static float _vprec_binary32_binary_op(float a, float b,
                                        const vprec_operation op, void *context);
 static double _vprec_binary64_binary_op(double a, double b,
                                         const vprec_operation op,
                                         void *context);
-
-/* variables and structure for instrumentation mode */
-
-/* define instrumentation modes */
-typedef enum {
-  vprecinst_arg,
-  vprecinst_op,
-  vprecinst_all,
-  vprecinst_none,
-  _vprecinst_end_
-} vprec_inst_mode;
-
-/* default instrumentation mode */
-#define VPREC_INST_MODE_DEFAULT vprecinst_none
-
-/* instrumentation modes' names */
-static const char *VPREC_INST_MODE_STR[] = {"arguments", "operations", "all",
-                                            "none"};
-
-/* Interflop context */
-typedef struct {
-  /* instrumentation variables */
-  const char *vprec_input_file;
-  const char *vprec_output_file;
-  FILE *vprec_log_file;
-  vprec_inst_mode vprec_inst_mode;
-  size_t vprec_log_depth;
-  /* arithmetic variables */
-  int binary32_precision;
-  int binary32_range;
-  int binary64_precision;
-  int binary64_range;
-  int absErr_exp;
-  vprec_mode mode;
-  bool relErr;
-  bool absErr;
-  bool daz;
-  bool ftz;
-} t_context;
 
 /******************** VPREC CONTROL FUNCTIONS *******************
  * The following functions are used to set virtual precision,
@@ -278,30 +153,6 @@ void _set_vprec_range_binary64(int range, t_context *ctx) {
   }
 }
 
-void _set_vprec_input_file(const char *input_file, t_context *ctx) {
-  ctx->vprec_input_file = input_file;
-}
-
-void _set_vprec_output_file(const char *output_file, t_context *ctx) {
-  ctx->vprec_output_file = output_file;
-}
-
-void _set_vprec_log_file(const char *log_file, t_context *ctx) {
-  ctx->vprec_log_file = fopen(log_file, "w");
-  if (ctx->vprec_log_file == NULL) {
-    logger_error("Log file can't be written");
-  }
-}
-
-void _set_vprec_inst_mode(vprec_inst_mode mode, t_context *ctx) {
-  if (mode >= _vprecinst_end_) {
-    logger_error("invalid instrumentation mode provided, must be one of:"
-                 "{arguments, operations, all, none}.");
-  } else {
-    ctx->vprec_inst_mode = mode;
-  }
-}
-
 void _set_vprec_error_mode(vprec_err_mode mode, t_context *ctx) {
   if (mode >= _vprec_err_mode_end_) {
     logger_error("invalid error mode provided, must be one of: "
@@ -327,6 +178,18 @@ void _set_vprec_error_mode(vprec_err_mode mode, t_context *ctx) {
 
 void _set_vprec_max_abs_err_exp(long exponent, t_context *ctx) {
   ctx->absErr_exp = exponent;
+}
+
+const char *_get_error_mode_str(t_context *ctx) {
+  if (ctx->relErr && ctx->absErr) {
+    return VPREC_ERR_MODE_STR[vprec_err_mode_all];
+  } else if (ctx->relErr && !ctx->absErr) {
+    return VPREC_ERR_MODE_STR[vprec_err_mode_rel];
+  } else if (!ctx->relErr && ctx->absErr) {
+    return VPREC_ERR_MODE_STR[vprec_err_mode_abs];
+  } else {
+    return NULL;
+  }
 }
 
 void _set_vprec_daz(bool daz, t_context *ctx) { ctx->daz = daz; }
@@ -493,8 +356,8 @@ inline double handle_binary64_normal_absErr(double a, int64_t aexp,
   };
 
 // Round the float with the given precision
-static float _vprec_round_binary32(float a, char is_input, void *context,
-                                   int binary32_range, int binary32_precision) {
+float _vprec_round_binary32(float a, char is_input, void *context,
+                            int binary32_range, int binary32_precision) {
   t_context *currentContext = (t_context *)context;
 
   /* test if 'a' is a special case */
@@ -553,9 +416,8 @@ static float _vprec_round_binary32(float a, char is_input, void *context,
 }
 
 // Round the double with the given precision
-static double _vprec_round_binary64(double a, char is_input, void *context,
-                                    int binary64_range,
-                                    int binary64_precision) {
+double _vprec_round_binary64(double a, char is_input, void *context,
+                             int binary64_range, int binary64_precision) {
   t_context *currentContext = (t_context *)context;
 
   /* test if 'a' is a special case */
@@ -660,648 +522,18 @@ static inline double _vprec_binary64_binary_op(double a, double b,
   return res;
 }
 
-/******************** VPREC INSTRUMENTATION FUNCTIONS ********************
- * The following set of functions is used to apply vprec on instrumented
- * functions. For that we need a hashmap to stock data and reading and
- * writing functions to get and save them. Enter and exit functions are
- * called before and after the instrumented function and allow us to set
- * the desired precision or to round arguments, depending on the mode.
- *************************************************************************/
-// Hashmap for functions metadata
-vfc_hashmap_t _vprec_func_map;
-
-// Metadata of arguments
-typedef struct _vprec_argument_data {
-  // Identifier of the argument
-  char arg_id[100];
-  // Data type of the argument 0 is float and 1 is double
-  short data_type;
-  // Minimum rounded value of the argument
-  int min_range;
-  // Maximum rounded value of the argument
-  int max_range;
-  // Exponent length of the argument
-  int exponent_length;
-  // Mantissa length of the argument
-  int mantissa_length;
-} _vprec_argument_data_t;
-
-// Metadata of function calls
-typedef struct _vprec_inst_function {
-  // Id of the function
-  char id[500];
-  // Indicate if the function is from library
-  short isLibraryFunction;
-  // Indicate if the function is intrinsic
-  short isIntrinsicFunction;
-  // Counter of Floating Point instruction
-  size_t useFloat;
-  // Counter of Floating Point instruction
-  size_t useDouble;
-  // Internal Operations Range64
-  int OpsRange64;
-  // Internal Operations Prec64
-  int OpsPrec64;
-  // Internal Operations Range32
-  int OpsRange32;
-  // Internal Operations Prec32
-  int OpsPrec32;
-  // Number of floating point input arguments
-  int nb_input_args;
-  // Array of data on input arguments
-  _vprec_argument_data_t *input_args;
-  // Number of floating point output arguments
-  int nb_output_args;
-  // Array of data on output arguments
-  _vprec_argument_data_t *output_args;
-  // Number of call for this call site
-  int n_calls;
-} _vprec_inst_function_t;
-
-// Write the hashmap in the given file
-void _vprec_write_hasmap(FILE *fout) {
-  for (size_t ii = 0; ii < _vprec_func_map->capacity; ii++) {
-    if (get_value_at(_vprec_func_map->items, ii) != 0 &&
-        get_value_at(_vprec_func_map->items, ii) != 0) {
-      _vprec_inst_function_t *function =
-          (_vprec_inst_function_t *)get_value_at(_vprec_func_map->items, ii);
-
-      fprintf(fout, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-              function->id, function->isLibraryFunction,
-              function->isIntrinsicFunction, function->useFloat,
-              function->useDouble, function->OpsPrec64, function->OpsRange64,
-              function->OpsPrec32, function->OpsRange32,
-              function->nb_input_args, function->nb_output_args,
-              function->n_calls);
-      for (int i = 0; i < function->nb_input_args; i++) {
-        fprintf(fout, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->input_args[i].arg_id,
-                function->input_args[i].data_type,
-                function->input_args[i].mantissa_length,
-                function->input_args[i].exponent_length,
-                function->input_args[i].min_range,
-                function->input_args[i].max_range);
-      }
-      for (int i = 0; i < function->nb_output_args; i++) {
-        fprintf(fout, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->output_args[i].arg_id,
-                function->output_args[i].data_type,
-                function->output_args[i].mantissa_length,
-                function->output_args[i].exponent_length,
-                function->output_args[i].min_range,
-                function->output_args[i].max_range);
-      }
-    }
-  }
-}
-
-// Read and initialize the hashmap from the given file
-void _vprec_read_hasmap(FILE *fin) {
-  _vprec_inst_function_t function;
-
-  while (fscanf(fin, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-                function.id, &function.isLibraryFunction,
-                &function.isIntrinsicFunction, &function.useFloat,
-                &function.useDouble, &function.OpsPrec64, &function.OpsRange64,
-                &function.OpsPrec32, &function.OpsRange32,
-                &function.nb_input_args, &function.nb_output_args,
-                &function.n_calls) == 12) {
-    // allocate space for input arguments
-    function.input_args =
-        malloc(function.nb_input_args * sizeof(_vprec_argument_data_t));
-    // allocate space for output arguments
-    function.output_args =
-        malloc(function.nb_output_args * sizeof(_vprec_argument_data_t));
-
-    // get input arguments precision
-    for (int i = 0; i < function.nb_input_args; i++) {
-      if (!fscanf(fin, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.input_args[i].arg_id,
-                  &function.input_args[i].data_type,
-                  &function.input_args[i].mantissa_length,
-                  &function.input_args[i].exponent_length,
-                  &function.input_args[i].min_range,
-                  &function.input_args[i].max_range)) {
-        logger_error("Can't read input arguments of %s\n", function.id);
-      }
-    }
-
-    // get output arguments precision
-    for (int i = 0; i < function.nb_output_args; i++) {
-      if (!fscanf(fin, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.output_args[i].arg_id,
-                  &function.output_args[i].data_type,
-                  &function.output_args[i].mantissa_length,
-                  &function.output_args[i].exponent_length,
-                  &function.output_args[i].min_range,
-                  &function.output_args[i].max_range)) {
-        logger_error("Can't read output arguments of %s\n", function.id);
-      }
-    }
-
-    // insert in the hashmap
-    _vprec_inst_function_t *address = malloc(sizeof(_vprec_inst_function_t));
-    (*address) = function;
-    vfc_hashmap_insert(_vprec_func_map, vfc_hashmap_str_function(function.id),
-                       address);
-  }
-}
-
-// Print str in vprec_log_file with the correct offset
-#define _vprec_print_log(ctx, _vprec_str, ...)                                 \
-  ({                                                                           \
-    if (ctx->vprec_log_file != NULL) {                                         \
-      for (size_t _vprec_d = 0; _vprec_d < ctx->vprec_log_depth; _vprec_d++)   \
-        fprintf(ctx->vprec_log_file, "\t");                                    \
-      fprintf(ctx->vprec_log_file, _vprec_str, ##__VA_ARGS__);                 \
-    }                                                                          \
-  })
-
-void _vprec_function_instrumentation_init(t_context *ctx) {
-  /* Initialize the vprec_function_map */
-  _vprec_func_map = vfc_hashmap_create();
-  /* read the hashmap */
-  if (ctx->vprec_input_file != NULL) {
-    FILE *f = fopen(ctx->vprec_input_file, "r");
-    if (f != NULL) {
-      _vprec_read_hasmap(f);
-      fclose(f);
-    } else {
-      logger_error("Input file can't be found");
-    }
-  }
-}
-
-void _vprec_function_instrumentation_finalize(t_context *ctx) {
-  /* save the hashmap */
-  if (ctx->vprec_output_file != NULL) {
-    FILE *f = fopen(ctx->vprec_output_file, "w");
-    if (f != NULL) {
-      _vprec_write_hasmap(f);
-      fclose(f);
-    } else {
-      logger_error("Output file can't be written");
-    }
-  }
-
-  /* close log file */
-  if (ctx->vprec_log_file != NULL) {
-    fclose(ctx->vprec_log_file);
-  }
-
-  /* free vprec_function_map */
-  vfc_hashmap_free(_vprec_func_map);
-
-  /* destroy vprec_function_map */
-  vfc_hashmap_destroy(_vprec_func_map);
-}
-
 // Set precision for internal operations and round input arguments for a given
 // function call
 void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                                int nb_args, va_list ap) {
-  t_context *ctx = (t_context *)context;
-  interflop_function_info_t *function_info = stack->array[stack->top];
-
-  if (function_info == NULL)
-    logger_error("Call stack error\n");
-
-  _vprec_inst_function_t *function_inst = vfc_hashmap_get(
-      _vprec_func_map, vfc_hashmap_str_function(function_info->id));
-
-  // if the function is not in the hashtable
-  if (function_inst == NULL) {
-    function_inst = malloc(sizeof(_vprec_inst_function_t));
-
-    // initialize the structure
-    strcpy(function_inst->id, function_info->id);
-    function_inst->isLibraryFunction = function_info->isLibraryFunction;
-    function_inst->isIntrinsicFunction = function_info->isIntrinsicFunction;
-    function_inst->useFloat = function_info->useFloat;
-    function_inst->useDouble = function_info->useDouble;
-    function_inst->OpsRange64 = VPREC_RANGE_BINARY64_DEFAULT;
-    function_inst->OpsPrec64 = VPREC_PRECISION_BINARY64_DEFAULT;
-    function_inst->OpsRange32 = VPREC_RANGE_BINARY32_DEFAULT;
-    function_inst->OpsPrec32 = VPREC_PRECISION_BINARY32_DEFAULT;
-    function_inst->nb_input_args = 0;
-    function_inst->input_args = NULL;
-    function_inst->nb_output_args = 0;
-    function_inst->output_args = NULL;
-    function_inst->n_calls = 0;
-
-    // insert the function in the hashmap
-    vfc_hashmap_insert(_vprec_func_map,
-                       vfc_hashmap_str_function(function_info->id),
-                       function_inst);
-  }
-
-  // increment the number of calls
-  function_inst->n_calls++;
-
-  // set internal operations precision with custom values depending on the mode
-  if (!function_info->isLibraryFunction &&
-      !function_info->isIntrinsicFunction &&
-      ctx->vprec_inst_mode != vprecinst_arg &&
-      ctx->vprec_inst_mode != vprecinst_none) {
-    _set_vprec_precision_binary64(function_inst->OpsPrec64, ctx);
-    _set_vprec_range_binary64(function_inst->OpsRange64, ctx);
-    _set_vprec_precision_binary32(function_inst->OpsPrec32, ctx);
-    _set_vprec_range_binary32(function_inst->OpsRange32, ctx);
-  }
-
-  // treatment of arguments
-  int new_flag = (function_inst->input_args == NULL && nb_args > 0);
-
-  // print function info in log
-  _vprec_print_log(ctx, "\n");
-  _vprec_print_log(ctx, "enter in %s\t%d\t%d\t%d\t%d\n", function_inst->id,
-                   function_inst->OpsPrec64, function_inst->OpsRange64,
-                   function_inst->OpsPrec32, function_inst->OpsRange32);
-
-  // allocate memory for arguments
-  if (new_flag) {
-    function_inst->input_args =
-        malloc(sizeof(_vprec_argument_data_t) * nb_args);
-    function_inst->nb_input_args = nb_args;
-  }
-
-  // boolean which indicates if arguments should be rounded or not depending on
-  // modes
-  int mode_flag =
-      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ib)) &&
-       ((ctx->vprec_inst_mode == vprecinst_all) ||
-        (ctx->vprec_inst_mode == vprecinst_arg)) &&
-       ctx->vprec_inst_mode != vprecinst_none);
-
-  for (int i = 0; i < nb_args; i++) {
-    // get argument type, id and size
-    int type = va_arg(ap, int);
-    char *arg_id = va_arg(ap, char *);
-    unsigned int size = va_arg(ap, unsigned int);
-
-    if (new_flag) {
-      function_inst->input_args[i].data_type = type;
-      strcpy(function_inst->input_args[i].arg_id, arg_id);
-      function_inst->input_args[i].min_range = INT_MAX;
-      function_inst->input_args[i].max_range = INT_MIN;
-      function_inst->input_args[i].exponent_length =
-          (type == FDOUBLE || type == FDOUBLE_PTR)
-              ? VPREC_RANGE_BINARY64_DEFAULT
-              : VPREC_RANGE_BINARY32_DEFAULT;
-      function_inst->input_args[i].mantissa_length =
-          (type == FDOUBLE || type == FDOUBLE_PTR)
-              ? VPREC_PRECISION_BINARY64_DEFAULT
-              : VPREC_PRECISION_BINARY32_DEFAULT;
-    }
-
-    if (type == FDOUBLE) {
-      double *value = va_arg(ap, double *);
-
-      _vprec_print_log(ctx, " - %s\tinput\tdouble\t%s\t%la\t->\t",
-                       function_inst->id, arg_id, *value);
-
-      if ((!new_flag) && mode_flag) {
-        *value = _vprec_round_binary64(
-            *value, 1, context, function_inst->input_args[i].exponent_length,
-            function_inst->input_args[i].mantissa_length);
-      }
-
-      if (!(isnan(*value) || isinf(*value))) {
-        function_inst->input_args[i].min_range =
-            (floor(*value) < function_inst->input_args[i].min_range || new_flag)
-                ? floor(*value)
-                : function_inst->input_args[i].min_range;
-        function_inst->input_args[i].max_range =
-            (ceil(*value) > function_inst->input_args[i].max_range || new_flag)
-                ? ceil(*value)
-                : function_inst->input_args[i].max_range;
-      }
-
-      _vprec_print_log(ctx, "%la\t(%d, %d)\n", *value,
-                       function_inst->input_args[i].mantissa_length,
-                       function_inst->input_args[i].exponent_length);
-
-    } else if (type == FFLOAT) {
-      float *value = va_arg(ap, float *);
-
-      _vprec_print_log(ctx, " - %s\tinput\tfloat\t%s\t%a\t->\t",
-                       function_inst->id, arg_id, *value);
-
-      if ((!new_flag) && mode_flag) {
-        *value = _vprec_round_binary32(
-            *value, 1, context, function_inst->input_args[i].exponent_length,
-            function_inst->input_args[i].mantissa_length);
-      }
-
-      if (!(isnan(*value) || isinf(*value))) {
-        function_inst->input_args[i].min_range =
-            (floorf(*value) < function_inst->input_args[i].min_range ||
-             new_flag)
-                ? floorf(*value)
-                : function_inst->input_args[i].min_range;
-        function_inst->input_args[i].max_range =
-            (ceilf(*value) > function_inst->input_args[i].max_range || new_flag)
-                ? ceilf(*value)
-                : function_inst->input_args[i].max_range;
-      }
-
-      _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
-                       function_inst->input_args[i].mantissa_length,
-                       function_inst->input_args[i].exponent_length);
-
-    } else if (type == FDOUBLE_PTR) {
-      double *value = va_arg(ap, double *);
-
-      for (unsigned int j = 0; j < size; j++, value++) {
-        if (value == NULL) {
-          _vprec_print_log(ctx,
-                           " - %s\tinput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
-                           function_inst->id, j, arg_id);
-          continue;
-        }
-
-        _vprec_print_log(ctx, " - %s\tinput[%u]\tdouble_ptr\t%s\t%la\t->\t",
-                         function_inst->id, j, arg_id, *value);
-
-        if ((!new_flag) && mode_flag) {
-          *value = _vprec_round_binary64(
-              *value, 1, context, function_inst->input_args[i].exponent_length,
-              function_inst->input_args[i].mantissa_length);
-        }
-
-        if (!(isnan(*value) || isinf(*value))) {
-          function_inst->input_args[i].min_range =
-              (floor(*value) < function_inst->input_args[i].min_range ||
-               new_flag)
-                  ? floor(*value)
-                  : function_inst->input_args[i].min_range;
-          function_inst->input_args[i].max_range =
-              (ceil(*value) > function_inst->input_args[i].max_range ||
-               new_flag)
-                  ? ceil(*value)
-                  : function_inst->input_args[i].max_range;
-        }
-
-        _vprec_print_log(ctx, "%la\t(%d, %d)\n", *value,
-                         function_inst->input_args[i].mantissa_length,
-                         function_inst->input_args[i].exponent_length);
-      }
-    } else if (type == FFLOAT_PTR) {
-      float *value = va_arg(ap, float *);
-
-      for (unsigned int j = 0; j < size; j++, value++) {
-        if (value == NULL) {
-          _vprec_print_log(ctx,
-                           " - %s\tinput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
-                           function_inst->id, j, arg_id);
-          continue;
-        }
-
-        _vprec_print_log(ctx, " - %s\tinput[%u]\tfloat_ptr\t%s\t%a\t->\t",
-                         function_inst->id, j, arg_id, *value);
-
-        if ((!new_flag) && mode_flag) {
-          *value = _vprec_round_binary32(
-              *value, 1, context, function_inst->input_args[i].exponent_length,
-              function_inst->input_args[i].mantissa_length);
-        }
-
-        if (!(isnan(*value) || isinf(*value))) {
-          function_inst->input_args[i].min_range =
-              (floorf(*value) < function_inst->input_args[i].min_range ||
-               new_flag)
-                  ? floorf(*value)
-                  : function_inst->input_args[i].min_range;
-          function_inst->input_args[i].max_range =
-              (ceilf(*value) > function_inst->input_args[i].max_range ||
-               new_flag)
-                  ? ceilf(*value)
-                  : function_inst->input_args[i].max_range;
-        }
-
-        _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
-                         function_inst->input_args[i].mantissa_length,
-                         function_inst->input_args[i].exponent_length);
-      }
-    }
-  }
-
-  // increment depth
-  ctx->vprec_log_depth++;
+  _vfi_enter_function(stack, context, nb_args, ap);
 }
 
 // Set precision for internal operations and round output arguments for a given
 // function call
 void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                               int nb_args, va_list ap) {
-  t_context *ctx = (t_context *)context;
-  interflop_function_info_t *function_info = stack->array[stack->top];
-
-  // decrement depth
-  ctx->vprec_log_depth--;
-
-  if (function_info == NULL)
-    logger_error("Call stack error \n");
-
-  _vprec_inst_function_t *function_inst = vfc_hashmap_get(
-      _vprec_func_map, vfc_hashmap_str_function(function_info->id));
-
-  // set internal operations precision with parent function values
-  if (stack->array[stack->top + 1] != NULL) {
-    interflop_function_info_t *parent_info = stack->array[stack->top + 1];
-
-    if (!parent_info->isLibraryFunction && !parent_info->isIntrinsicFunction &&
-        ctx->vprec_inst_mode != vprecinst_arg &&
-        ctx->vprec_inst_mode != vprecinst_none) {
-
-      _vprec_inst_function_t *function_parent = vfc_hashmap_get(
-          _vprec_func_map, vfc_hashmap_str_function(parent_info->id));
-
-      if (function_parent != NULL) {
-        _set_vprec_precision_binary64(function_parent->OpsPrec64, ctx);
-        _set_vprec_range_binary64(function_parent->OpsRange64, ctx);
-        _set_vprec_precision_binary32(function_parent->OpsPrec32, ctx);
-        _set_vprec_range_binary32(function_parent->OpsRange32, ctx);
-      }
-    }
-  }
-
-  // treatment of arguments
-  int new_flag = (function_inst->output_args == NULL && nb_args > 0);
-
-  // print function info in log
-  _vprec_print_log(ctx, "exit of %s\t%d\t%d\t%d\t%d\n", function_inst->id,
-                   function_inst->OpsPrec64, function_inst->OpsRange64,
-                   function_inst->OpsPrec32, function_inst->OpsRange32);
-
-  // allocate memory for arguments
-  if (new_flag) {
-    function_inst->output_args =
-        malloc(sizeof(_vprec_argument_data_t) * nb_args);
-    function_inst->nb_output_args = nb_args;
-  }
-
-  // boolean which indicates if arguments should be rounded or not depending on
-  // modes
-  int mode_flag =
-      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ob)) &&
-       (ctx->vprec_inst_mode == vprecinst_all ||
-        ctx->vprec_inst_mode == vprecinst_arg) &&
-       ctx->vprec_inst_mode != vprecinst_none);
-
-  for (int i = 0; i < nb_args; i++) {
-    int type = va_arg(ap, int);
-    char *arg_id = va_arg(ap, char *);
-    unsigned int size = va_arg(ap, unsigned int);
-
-    if (new_flag) {
-      // initialize arguments data
-      function_inst->output_args[i].data_type = type;
-      strcpy(function_inst->output_args[i].arg_id, arg_id);
-      function_inst->output_args[i].exponent_length =
-          (type == FDOUBLE || type == FDOUBLE_PTR)
-              ? VPREC_RANGE_BINARY64_DEFAULT
-              : VPREC_RANGE_BINARY32_DEFAULT;
-      function_inst->output_args[i].mantissa_length =
-          (type == FDOUBLE || type == FDOUBLE_PTR)
-              ? VPREC_PRECISION_BINARY64_DEFAULT
-              : VPREC_PRECISION_BINARY32_DEFAULT;
-      function_inst->output_args[i].min_range = INT_MAX;
-      function_inst->output_args[i].max_range = INT_MIN;
-    }
-
-    if (type == FDOUBLE) {
-      double *value = va_arg(ap, double *);
-
-      _vprec_print_log(ctx, " - %s\toutput\tdouble\t%s\t%la\t->\t",
-                       function_inst->id, arg_id, *value);
-
-      if ((!new_flag) && mode_flag) {
-        *value = _vprec_round_binary64(
-            *value, 0, context, function_inst->output_args[i].exponent_length,
-            function_inst->output_args[i].mantissa_length);
-      }
-
-      if (!(isnan(*value) || isinf(*value))) {
-        function_inst->output_args[i].min_range =
-            (floor(*value) < function_inst->output_args[i].min_range ||
-             new_flag)
-                ? floor(*value)
-                : function_inst->output_args[i].min_range;
-        function_inst->output_args[i].max_range =
-            (ceil(*value) > function_inst->output_args[i].max_range || new_flag)
-                ? ceil(*value)
-                : function_inst->output_args[i].max_range;
-      }
-
-      _vprec_print_log(ctx, "%la\t(%d,%d)\n", *value,
-                       function_inst->output_args[i].mantissa_length,
-                       function_inst->output_args[i].exponent_length);
-    } else if (type == FFLOAT) {
-      float *value = va_arg(ap, float *);
-
-      _vprec_print_log(ctx, " - %s\toutput\tfloat\t%s\t%a\t->\t",
-                       function_inst->id, arg_id, *value);
-
-      if ((!new_flag) && mode_flag) {
-        *value = _vprec_round_binary32(
-            *value, 0, context, function_inst->output_args[i].exponent_length,
-            function_inst->output_args[i].mantissa_length);
-      }
-
-      if (!(isnan(*value) || isinf(*value))) {
-        function_inst->output_args[i].min_range =
-            (floorf(*value) < function_inst->output_args[i].min_range ||
-             new_flag)
-                ? floorf(*value)
-                : function_inst->output_args[i].min_range;
-        function_inst->output_args[i].max_range =
-            (ceilf(*value) > function_inst->output_args[i].max_range ||
-             new_flag)
-                ? ceilf(*value)
-                : function_inst->output_args[i].max_range;
-      }
-
-      _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
-                       function_inst->output_args[i].mantissa_length,
-                       function_inst->output_args[i].exponent_length);
-    } else if (type == FDOUBLE_PTR) {
-      double *value = va_arg(ap, double *);
-
-      for (unsigned int j = 0; j < size; j++, value++) {
-        if (value == NULL) {
-          _vprec_print_log(
-              ctx, " - %s\toutput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
-              function_inst->id, j, arg_id);
-          continue;
-        }
-
-        _vprec_print_log(ctx, " - %s\toutput[%u]\tdouble_ptr\t%s\t%la\t->\t",
-                         function_inst->id, j, arg_id, *value);
-
-        if ((!new_flag) && mode_flag) {
-          *value = _vprec_round_binary64(
-              *value, 0, context, function_inst->output_args[i].exponent_length,
-              function_inst->output_args[i].mantissa_length);
-        }
-
-        if (!(isnan(*value) || isinf(*value))) {
-          function_inst->output_args[i].min_range =
-              (floor(*value) < function_inst->output_args[i].min_range ||
-               new_flag)
-                  ? floor(*value)
-                  : function_inst->output_args[i].min_range;
-          function_inst->output_args[i].max_range =
-              (ceil(*value) > function_inst->output_args[i].max_range ||
-               new_flag)
-                  ? ceil(*value)
-                  : function_inst->output_args[i].max_range;
-        }
-
-        _vprec_print_log(ctx, "%la\t(%d,%d)\n", *value,
-                         function_inst->output_args[i].mantissa_length,
-                         function_inst->output_args[i].exponent_length);
-      }
-    } else if (type == FFLOAT_PTR) {
-      float *value = va_arg(ap, float *);
-
-      for (unsigned int j = 0; j < size; j++, value++) {
-        if (value == NULL) {
-          _vprec_print_log(ctx,
-                           " - %s\toutput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
-                           function_inst->id, j, arg_id);
-          continue;
-        }
-
-        _vprec_print_log(ctx, " - %s\toutput[%u]\tfloat_ptr\t%s\t%a\t->\t",
-                         function_inst->id, j, arg_id, *value);
-
-        if ((!new_flag) && mode_flag) {
-          *value = _vprec_round_binary32(
-              *value, 0, context, function_inst->output_args[i].exponent_length,
-              function_inst->output_args[i].mantissa_length);
-        }
-
-        if (!(isnan(*value) || isinf(*value))) {
-          function_inst->output_args[i].min_range =
-              (floorf(*value) < function_inst->output_args[i].min_range ||
-               new_flag)
-                  ? floorf(*value)
-                  : function_inst->output_args[i].min_range;
-          function_inst->output_args[i].max_range =
-              (ceilf(*value) > function_inst->output_args[i].max_range ||
-               new_flag)
-                  ? ceilf(*value)
-                  : function_inst->output_args[i].max_range;
-        }
-
-        _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
-                         function_inst->output_args[i].mantissa_length,
-                         function_inst->output_args[i].exponent_length);
-      }
-    }
-  }
-  _vprec_print_log(ctx, "\n");
+  _vfi_exit_function(stack, context, nb_args, ap);
 }
 
 /************************* FPHOOKS FUNCTIONS *************************
@@ -1377,12 +609,6 @@ static struct argp_option options[] = {
      "select range for binary32 (0 < RANGE && RANGE <= 8)", 0},
     {key_range_b64_str, KEY_RANGE_B64, "RANGE", 0,
      "select range for binary64 (0 < RANGE && RANGE <= 11)", 0},
-    {key_input_file_str, KEY_INPUT_FILE, "INPUT", 0,
-     "input file with the precision configuration to use", 0},
-    {key_output_file_str, KEY_OUTPUT_FILE, "OUTPUT", 0,
-     "output file where the precision profile is written", 0},
-    {key_log_file_str, KEY_LOG_FILE, "LOG", 0,
-     "log file where input/output informations are written", 0},
     {key_preset_str, KEY_PRESET, "PRESET", 0,
      "select a default PRESET setting among {binary16, binary32, binary64, "
      "bfloat16, tensorfloat, fp24, PXR24}\n"
@@ -1397,9 +623,6 @@ static struct argp_option options[] = {
      "select error mode among {rel, abs, all}", 0},
     {key_err_exp_str, KEY_ERR_EXP, "MAX_ABS_ERROR_EXPONENT", 0,
      "select magnitude of the maximum absolute error", 0},
-    {key_instrument_str, KEY_INSTRUMENT, "INSTRUMENTATION", 0,
-     "select VPREC instrumentation mode among {arguments, operations, full}",
-     0},
     {key_daz_str, KEY_DAZ, 0, 0,
      "denormals-are-zero: sets denormals inputs to zero", 0},
     {key_ftz_str, KEY_FTZ, 0, 0, "flush-to-zero: sets denormal output to zero",
@@ -1408,6 +631,7 @@ static struct argp_option options[] = {
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   t_context *ctx = (t_context *)state->input;
+  state->child_inputs[0] = ctx;
   char *endptr;
   int val = -1;
   int precision = 0;
@@ -1478,18 +702,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
       _set_vprec_range_binary64(val, ctx);
     }
     break;
-  case KEY_INPUT_FILE:
-    /* input file */
-    _set_vprec_input_file(arg, ctx);
-    break;
-  case KEY_OUTPUT_FILE:
-    /* output file */
-    _set_vprec_output_file(arg, ctx);
-    break;
-  case KEY_LOG_FILE:
-    /* log file */
-    _set_vprec_log_file(arg, ctx);
-    break;
   case KEY_MODE:
     /* mode */
     if (strcasecmp(VPREC_MODE_STR[vprecmode_ieee], arg) == 0) {
@@ -1531,22 +743,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
       _set_vprec_max_abs_err_exp(exp, ctx);
     }
     break;
-  case KEY_INSTRUMENT:
-    /* instrumentation mode */
-    if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_arg, ctx);
-    } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_op], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_op, ctx);
-    } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_all], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_all, ctx);
-    } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_none], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_none, ctx);
-    } else {
-      logger_error("--%s invalid value provided, must be one of: "
-                   "{arguments, operations, all}.",
-                   key_instrument_str);
-    }
-    break;
   case KEY_DAZ:
     /* denormals-are-zero */
     _set_vprec_daz(true, ctx);
@@ -1557,24 +753,24 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     break;
   case KEY_PRESET:
     /* preset */
-    if (strcmp(VPREC_PRESET_STR[preset_binary16], arg) == 0) {
-      precision = preset_precision_binary16;
-      range = preset_range_binary16;
-    } else if (strcmp(VPREC_PRESET_STR[preset_binary32], arg) == 0) {
-      precision = preset_precision_binary32;
-      range = preset_range_binary32;
-    } else if (strcmp(VPREC_PRESET_STR[preset_bfloat16], arg) == 0) {
-      precision = preset_precision_bfloat16;
-      range = preset_range_bfloat16;
-    } else if (strcmp(VPREC_PRESET_STR[preset_tensorfloat], arg) == 0) {
-      precision = preset_precision_tensorfloat;
-      range = preset_range_tensorfloat;
-    } else if (strcmp(VPREC_PRESET_STR[preset_fp24], arg) == 0) {
-      precision = preset_precision_fp24;
-      range = preset_range_fp24;
-    } else if (strcmp(VPREC_PRESET_STR[preset_PXR24], arg) == 0) {
-      precision = preset_precision_PXR24;
-      range = preset_range_PXR24;
+    if (strcmp(VPREC_PRESET_STR[vprec_preset_binary16], arg) == 0) {
+      precision = vprec_preset_precision_binary16;
+      range = vprec_preset_range_binary16;
+    } else if (strcmp(VPREC_PRESET_STR[vprec_preset_binary32], arg) == 0) {
+      precision = vprec_preset_precision_binary32;
+      range = vprec_preset_range_binary32;
+    } else if (strcmp(VPREC_PRESET_STR[vprec_preset_bfloat16], arg) == 0) {
+      precision = vprec_preset_precision_bfloat16;
+      range = vprec_preset_range_bfloat16;
+    } else if (strcmp(VPREC_PRESET_STR[vprec_preset_tensorfloat], arg) == 0) {
+      precision = vprec_preset_precision_tensorfloat;
+      range = vprec_preset_range_tensorfloat;
+    } else if (strcmp(VPREC_PRESET_STR[vprec_preset_fp24], arg) == 0) {
+      precision = vprec_preset_precision_fp24;
+      range = vprec_preset_range_fp24;
+    } else if (strcmp(VPREC_PRESET_STR[vprec_preset_PXR24], arg) == 0) {
+      precision = vprec_preset_precision_PXR24;
+      range = vprec_preset_range_PXR24;
     } else {
       logger_error("--%s invalid preset provided, must be one of: "
                    "{binary16, binary32, binary64, bfloat16, tensorfloat, "
@@ -1598,14 +794,20 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   return 0;
 }
 
-static struct argp argp = {options, parse_opt, "", "", NULL, NULL, NULL};
+static struct argp_child argpc[] = {
+    {&vfi_argp, 0, "vprec function instrumentation", 0}, {0}};
 
+static struct argp argp = {options, parse_opt, "", "", argpc, NULL, NULL};
+
+/* allocate the context */
+void _vprec_alloc_context(void **context) {
+  t_context *ctx = (t_context *)malloc(sizeof(t_context));
+  _vfi_alloc_context(ctx);
+  *context = ctx;
+}
+
+/* intialize the context */
 void init_context(t_context *ctx) {
-  ctx->vprec_input_file = NULL;
-  ctx->vprec_output_file = NULL;
-  ctx->vprec_log_file = NULL;
-  ctx->vprec_inst_mode = VPREC_INST_MODE_DEFAULT;
-  ctx->vprec_log_depth = 0;
   ctx->binary32_precision = VPREC_PRECISION_BINARY32_DEFAULT;
   ctx->binary32_range = VPREC_RANGE_BINARY32_DEFAULT;
   ctx->binary64_precision = VPREC_PRECISION_BINARY64_DEFAULT;
@@ -1616,6 +818,7 @@ void init_context(t_context *ctx) {
   ctx->absErr_exp = -DOUBLE_EXP_MIN;
   ctx->daz = false;
   ctx->ftz = false;
+  _vfi_init_context(ctx);
 }
 
 void print_information_header(void *context) {
@@ -1631,35 +834,23 @@ void print_information_header(void *context) {
 
   t_context *ctx = (t_context *)context;
 
-  logger_info(
-      "load backend with "
-      "%s = %d, "
-      "%s = %d, "
-      "%s = %d, "
-      "%s = %d, "
-      "%s = %s, "
-      "%s = %s, "
-      "%s = %d, "
-      "%s = %s, "
-      "%s = %s and "
-      "%s = %s"
-      "\n",
-      key_prec_b32_str, ctx->binary32_precision, key_range_b32_str,
-      ctx->binary32_range, key_prec_b64_str, ctx->binary64_precision,
-      key_range_b64_str, ctx->binary64_range, key_mode_str,
-      VPREC_MODE_STR[ctx->mode], key_err_mode_str,
-      (ctx->relErr && !ctx->absErr)   ? VPREC_ERR_MODE_STR[vprec_err_mode_rel]
-      : (!ctx->relErr && ctx->absErr) ? VPREC_ERR_MODE_STR[vprec_err_mode_abs]
-      : (ctx->relErr && ctx->absErr)  ? VPREC_ERR_MODE_STR[vprec_err_mode_all]
-                                      : VPREC_ERR_MODE_STR[vprec_err_mode_rel],
-      key_err_exp_str, (ctx->absErr_exp), key_daz_str,
-      ctx->daz ? "true" : "false", key_ftz_str, ctx->ftz ? "true" : "false",
-      key_instrument_str, VPREC_INST_MODE_STR[ctx->vprec_inst_mode]);
+  logger_info("load backend with: \n");
+  logger_info("\t%s = %d\n", key_prec_b32_str, ctx->binary32_precision);
+  logger_info("\t%s = %d\n", key_range_b32_str, ctx->binary32_range);
+  logger_info("\t%s = %d\n", key_prec_b64_str, ctx->binary64_precision);
+  logger_info("\t%s = %d\n", key_range_b64_str, ctx->binary64_range);
+  logger_info("\t%s = %s\n", key_mode_str, VPREC_MODE_STR[ctx->mode]);
+  logger_info("\t%s = %s\n", key_err_mode_str, _get_error_mode_str(ctx));
+  if (ctx->absErr)
+    logger_info("\t%s = %d\n", key_err_exp_str, ctx->absErr_exp);
+  logger_info("\t%s = %s\n", key_daz_str, ctx->daz ? "true" : "false");
+  logger_info("\t%s = %s\n", key_ftz_str, ctx->ftz ? "true" : "false");
+  _vfi_print_information_header(context);
 }
 
 void _interflop_finalize(void *context) {
   t_context *ctx = (t_context *)context;
-  _vprec_function_instrumentation_finalize(ctx);
+  _vfi_finalize(ctx);
 }
 
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
@@ -1668,16 +859,17 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
   /* Initialize the logger */
   logger_init();
 
-  t_context *ctx = malloc(sizeof(t_context));
-  *context = ctx;
+  _vprec_alloc_context(context);
+  t_context *ctx = *context;
   init_context(ctx);
 
   /* parse backend arguments */
   argp_parse(&argp, argc, argv, 0, 0, ctx);
 
-  print_information_header(ctx);
+  /* initialize vprec function instrumentation context */
+  _vfi_init(ctx);
 
-  _vprec_function_instrumentation_init(ctx);
+  print_information_header(ctx);
 
   struct interflop_backend_interface_t interflop_backend_vprec = {
       _interflop_add_float,
