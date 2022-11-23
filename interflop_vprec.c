@@ -76,13 +76,7 @@ static const char key_instrument_str[] = "instrument";
 static const char key_daz_str[] = "daz";
 static const char key_ftz_str[] = "ftz";
 
-typedef struct {
-  bool relErr;
-  bool absErr;
-  int absErr_exp;
-  bool daz;
-  bool ftz;
-} t_context;
+/* variables that control precision, range and mode */
 
 /* define the available VPREC modes of operation */
 typedef enum {
@@ -100,7 +94,8 @@ static const char *VPREC_MODE_STR[] = {"ieee", "full", "ib", "ob"};
 typedef enum {
   vprec_err_mode_rel,
   vprec_err_mode_abs,
-  vprec_err_mode_all
+  vprec_err_mode_all,
+  _vprec_err_mode_end_
 } vprec_err_mode;
 
 static const char *VPREC_ERR_MODE_STR[] = {"rel", "abs", "all"};
@@ -120,7 +115,8 @@ typedef enum {
   preset_bfloat16,
   preset_tensorfloat,
   preset_fp24,
-  preset_PXR24
+  preset_PXR24,
+  _vprec_preset_end_
 } vprec_preset;
 
 typedef enum {
@@ -129,7 +125,8 @@ typedef enum {
   preset_precision_bfloat16 = 7,
   preset_precision_tensorfloat = 10,
   preset_precision_fp24 = 16,
-  preset_precision_PXR24 = 15
+  preset_precision_PXR24 = 15,
+  _vprec_preset_precision_end_
 } vprec_preset_precision;
 
 typedef enum {
@@ -138,7 +135,8 @@ typedef enum {
   preset_range_bfloat16 = 8,
   preset_range_tensorfloat = 8,
   preset_range_fp24 = 7,
-  preset_range_PXR24 = 8
+  preset_range_PXR24 = 8,
+  _vprec_preset_range_end_
 } vprec_preset_range;
 
 static const char *VPREC_PRESET_STR[] = {"binary16",    "binary32", "bfloat16",
@@ -165,13 +163,6 @@ static const char *VPREC_PRESET_STR[] = {"binary16",    "binary32", "bfloat16",
 /* common default values */
 #define VPREC_MODE_DEFAULT vprecmode_ob
 
-/* variables that control precision, range and mode */
-static vprec_mode VPRECLIB_MODE = VPREC_MODE_DEFAULT;
-static int VPRECLIB_BINARY32_PRECISION = VPREC_PRECISION_BINARY32_DEFAULT;
-static int VPRECLIB_BINARY64_PRECISION = VPREC_PRECISION_BINARY64_DEFAULT;
-static int VPRECLIB_BINARY32_RANGE = VPREC_RANGE_BINARY32_DEFAULT;
-static int VPRECLIB_BINARY64_RANGE = VPREC_RANGE_BINARY64_DEFAULT;
-
 static float _vprec_binary32_binary_op(float a, float b,
                                        const vprec_operation op, void *context);
 static double _vprec_binary64_binary_op(double a, double b,
@@ -192,31 +183,46 @@ typedef enum {
 /* default instrumentation mode */
 #define VPREC_INST_MODE_DEFAULT vprecinst_none
 
-static const char *vprec_input_file = NULL;
-static const char *vprec_output_file = NULL;
-static FILE *vprec_log_file = NULL;
-static vprec_inst_mode VPREC_INST_MODE = VPREC_INST_MODE_DEFAULT;
-static size_t vprec_log_depth = 0;
-
 /* instrumentation modes' names */
 static const char *VPREC_INST_MODE_STR[] = {"arguments", "operations", "all",
                                             "none"};
+
+/* Interflop context */
+typedef struct {
+  /* instrumentation variables */
+  const char *vprec_input_file;
+  const char *vprec_output_file;
+  FILE *vprec_log_file;
+  vprec_inst_mode vprec_inst_mode;
+  size_t vprec_log_depth;
+  /* arithmetic variables */
+  int binary32_precision;
+  int binary32_range;
+  int binary64_precision;
+  int binary64_range;
+  int absErr_exp;
+  vprec_mode mode;
+  bool relErr;
+  bool absErr;
+  bool daz;
+  bool ftz;
+} t_context;
 
 /******************** VPREC CONTROL FUNCTIONS *******************
  * The following functions are used to set virtual precision,
  * VPREC mode of operation and instrumentation mode.
  ***************************************************************/
 
-void _set_vprec_mode(vprec_mode mode) {
+void _set_vprec_mode(vprec_mode mode, t_context *ctx) {
   if (mode >= _vprecmode_end_) {
     logger_error("invalid mode provided, must be one of: "
                  "{ieee, full, ib, ob}.");
   } else {
-    VPRECLIB_MODE = mode;
+    ctx->mode = mode;
   }
 }
 
-void _set_vprec_precision_binary32(int precision) {
+void _set_vprec_precision_binary32(int precision, t_context *ctx) {
   if (precision < VPREC_PRECISION_BINARY32_MIN) {
     logger_error("invalid precision provided for binary32."
                  "Must be greater than %d",
@@ -226,11 +232,11 @@ void _set_vprec_precision_binary32(int precision) {
                  "Must be lower than %d",
                  VPREC_PRECISION_BINARY32_MAX);
   } else {
-    VPRECLIB_BINARY32_PRECISION = precision;
+    ctx->binary32_precision = precision;
   }
 }
 
-void _set_vprec_range_binary32(int range) {
+void _set_vprec_range_binary32(int range, t_context *ctx) {
   if (range < VPREC_RANGE_BINARY32_MIN) {
     logger_error("invalid range provided for binary32."
                  "Must be greater than %d",
@@ -240,11 +246,11 @@ void _set_vprec_range_binary32(int range) {
                  "Must be lower than %d",
                  VPREC_RANGE_BINARY32_MAX);
   } else {
-    VPRECLIB_BINARY32_RANGE = range;
+    ctx->binary32_range = range;
   }
 }
 
-void _set_vprec_precision_binary64(int precision) {
+void _set_vprec_precision_binary64(int precision, t_context *ctx) {
   if (precision < VPREC_PRECISION_BINARY64_MIN) {
     logger_error("invalid precision provided for binary64."
                  "Must be greater than %d",
@@ -254,11 +260,11 @@ void _set_vprec_precision_binary64(int precision) {
                  "Must be lower than %d",
                  VPREC_PRECISION_BINARY64_MAX);
   } else {
-    VPRECLIB_BINARY64_PRECISION = precision;
+    ctx->binary64_precision = precision;
   }
 }
 
-void _set_vprec_range_binary64(int range) {
+void _set_vprec_range_binary64(int range, t_context *ctx) {
   if (range < VPREC_RANGE_BINARY64_MIN) {
     logger_error("invalid range provided for binary64."
                  "Must be greater than %d",
@@ -268,34 +274,64 @@ void _set_vprec_range_binary64(int range) {
                  "Must be lower than %d",
                  VPREC_RANGE_BINARY64_MAX);
   } else {
-    VPRECLIB_BINARY64_RANGE = range;
+    ctx->binary64_range = range;
   }
 }
 
-void _set_vprec_input_file(const char *input_file) {
-  vprec_input_file = input_file;
+void _set_vprec_input_file(const char *input_file, t_context *ctx) {
+  ctx->vprec_input_file = input_file;
 }
 
-void _set_vprec_output_file(const char *output_file) {
-  vprec_output_file = output_file;
+void _set_vprec_output_file(const char *output_file, t_context *ctx) {
+  ctx->vprec_output_file = output_file;
 }
 
-void _set_vprec_log_file(const char *log_file) {
-  vprec_log_file = fopen(log_file, "w");
-
-  if (vprec_log_file == NULL) {
+void _set_vprec_log_file(const char *log_file, t_context *ctx) {
+  ctx->vprec_log_file = fopen(log_file, "w");
+  if (ctx->vprec_log_file == NULL) {
     logger_error("Log file can't be written");
   }
 }
 
-void _set_vprec_inst_mode(vprec_inst_mode mode) {
+void _set_vprec_inst_mode(vprec_inst_mode mode, t_context *ctx) {
   if (mode >= _vprecinst_end_) {
     logger_error("invalid instrumentation mode provided, must be one of:"
                  "{arguments, operations, all, none}.");
   } else {
-    VPREC_INST_MODE = mode;
+    ctx->vprec_inst_mode = mode;
   }
 }
+
+void _set_vprec_error_mode(vprec_err_mode mode, t_context *ctx) {
+  if (mode >= _vprec_err_mode_end_) {
+    logger_error("invalid error mode provided, must be one of: "
+                 "{rel, abs, all}.");
+  } else {
+    switch (mode) {
+    case vprec_err_mode_rel:
+      ctx->relErr = true;
+      ctx->absErr = false;
+      break;
+    case vprec_err_mode_abs:
+      ctx->relErr = false;
+      ctx->absErr = true;
+      break;
+    case vprec_err_mode_all:
+      ctx->relErr = true;
+      ctx->absErr = true;
+    default:
+      break;
+    }
+  }
+}
+
+void _set_vprec_max_abs_err_exp(long exponent, t_context *ctx) {
+  ctx->absErr_exp = exponent;
+}
+
+void _set_vprec_daz(bool daz, t_context *ctx) { ctx->daz = daz; }
+
+void _set_vprec_ftz(bool ftz, t_context *ctx) { ctx->ftz = ftz; }
 
 /******************** VPREC HELPER FUNCTIONS *******************
  * The following functions are used to set virtual precision,
@@ -467,7 +503,7 @@ static float _vprec_round_binary32(float a, char is_input, void *context,
   }
 
   /* round to zero or set to infinity if underflow or overflow compared to
-   * VPRECLIB_BINARY32_RANGE */
+   * ctx->binary32_range */
   int emax = (1 << (binary32_range - 1)) - 1;
   /* here emin is the smallest exponent in the *normal* range */
   int emin = 1 - emax;
@@ -528,7 +564,7 @@ static double _vprec_round_binary64(double a, char is_input, void *context,
   }
 
   /* round to zero or set to infinity if underflow or overflow compare to
-   * VPRECLIB_BINARY64_RANGE */
+   * ctx->binary64_range */
   int emax = (1 << (binary64_range - 1)) - 1;
   /* here emin is the smallest exponent in the *normal* range */
   int emin = 1 - emax;
@@ -581,20 +617,21 @@ static double _vprec_round_binary64(double a, char is_input, void *context,
 static inline float _vprec_binary32_binary_op(float a, float b,
                                               const vprec_operation op,
                                               void *context) {
+  t_context *ctx = (t_context *)context;
   float res = 0;
 
-  if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary32(a, 1, context, VPRECLIB_BINARY32_RANGE,
-                              VPRECLIB_BINARY32_PRECISION);
-    b = _vprec_round_binary32(b, 1, context, VPRECLIB_BINARY32_RANGE,
-                              VPRECLIB_BINARY32_PRECISION);
+  if ((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ib)) {
+    a = _vprec_round_binary32(a, 1, context, ctx->binary32_range,
+                              ctx->binary32_precision);
+    b = _vprec_round_binary32(b, 1, context, ctx->binary32_range,
+                              ctx->binary32_precision);
   }
 
   perform_binary_op(op, res, a, b);
 
-  if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary32(res, 0, context, VPRECLIB_BINARY32_RANGE,
-                                VPRECLIB_BINARY32_PRECISION);
+  if ((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ob)) {
+    res = _vprec_round_binary32(res, 0, context, ctx->binary32_range,
+                                ctx->binary32_precision);
   }
 
   return res;
@@ -603,20 +640,21 @@ static inline float _vprec_binary32_binary_op(float a, float b,
 static inline double _vprec_binary64_binary_op(double a, double b,
                                                const vprec_operation op,
                                                void *context) {
+  t_context *ctx = (t_context *)context;
   double res = 0;
 
-  if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary64(a, 1, context, VPRECLIB_BINARY64_RANGE,
-                              VPRECLIB_BINARY64_PRECISION);
-    b = _vprec_round_binary64(b, 1, context, VPRECLIB_BINARY64_RANGE,
-                              VPRECLIB_BINARY64_PRECISION);
+  if ((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ib)) {
+    a = _vprec_round_binary64(a, 1, context, ctx->binary64_range,
+                              ctx->binary64_precision);
+    b = _vprec_round_binary64(b, 1, context, ctx->binary64_range,
+                              ctx->binary64_precision);
   }
 
   perform_binary_op(op, res, a, b);
 
-  if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary64(res, 0, context, VPRECLIB_BINARY64_RANGE,
-                                VPRECLIB_BINARY64_PRECISION);
+  if ((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ob)) {
+    res = _vprec_round_binary64(res, 0, context, ctx->binary64_range,
+                                ctx->binary64_precision);
   }
 
   return res;
@@ -769,20 +807,60 @@ void _vprec_read_hasmap(FILE *fin) {
   }
 }
 
-// Print str in vprec_lof_file with the correct offset
-#define _vprec_print_log(_vprec_depth, _vprec_str, ...)                        \
+// Print str in vprec_log_file with the correct offset
+#define _vprec_print_log(ctx, _vprec_str, ...)                                 \
   ({                                                                           \
-    if (vprec_log_file != NULL) {                                              \
-      for (size_t _vprec_d = 0; _vprec_d < _vprec_depth; _vprec_d++)           \
-        fprintf(vprec_log_file, "\t");                                         \
-      fprintf(vprec_log_file, _vprec_str, ##__VA_ARGS__);                      \
+    if (ctx->vprec_log_file != NULL) {                                         \
+      for (size_t _vprec_d = 0; _vprec_d < ctx->vprec_log_depth; _vprec_d++)   \
+        fprintf(ctx->vprec_log_file, "\t");                                    \
+      fprintf(ctx->vprec_log_file, _vprec_str, ##__VA_ARGS__);                 \
     }                                                                          \
   })
+
+void _vprec_function_instrumentation_init(t_context *ctx) {
+  /* Initialize the vprec_function_map */
+  _vprec_func_map = vfc_hashmap_create();
+  /* read the hashmap */
+  if (ctx->vprec_input_file != NULL) {
+    FILE *f = fopen(ctx->vprec_input_file, "r");
+    if (f != NULL) {
+      _vprec_read_hasmap(f);
+      fclose(f);
+    } else {
+      logger_error("Input file can't be found");
+    }
+  }
+}
+
+void _vprec_function_instrumentation_finalize(t_context *ctx) {
+  /* save the hashmap */
+  if (ctx->vprec_output_file != NULL) {
+    FILE *f = fopen(ctx->vprec_output_file, "w");
+    if (f != NULL) {
+      _vprec_write_hasmap(f);
+      fclose(f);
+    } else {
+      logger_error("Output file can't be written");
+    }
+  }
+
+  /* close log file */
+  if (ctx->vprec_log_file != NULL) {
+    fclose(ctx->vprec_log_file);
+  }
+
+  /* free vprec_function_map */
+  vfc_hashmap_free(_vprec_func_map);
+
+  /* destroy vprec_function_map */
+  vfc_hashmap_destroy(_vprec_func_map);
+}
 
 // Set precision for internal operations and round input arguments for a given
 // function call
 void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                                int nb_args, va_list ap) {
+  t_context *ctx = (t_context *)context;
   interflop_function_info_t *function_info = stack->array[stack->top];
 
   if (function_info == NULL)
@@ -822,23 +900,23 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
 
   // set internal operations precision with custom values depending on the mode
   if (!function_info->isLibraryFunction &&
-      !function_info->isIntrinsicFunction && VPREC_INST_MODE != vprecinst_arg &&
-      VPREC_INST_MODE != vprecinst_none) {
-    _set_vprec_precision_binary64(function_inst->OpsPrec64);
-    _set_vprec_range_binary64(function_inst->OpsRange64);
-    _set_vprec_precision_binary32(function_inst->OpsPrec32);
-    _set_vprec_range_binary32(function_inst->OpsRange32);
+      !function_info->isIntrinsicFunction &&
+      ctx->vprec_inst_mode != vprecinst_arg &&
+      ctx->vprec_inst_mode != vprecinst_none) {
+    _set_vprec_precision_binary64(function_inst->OpsPrec64, ctx);
+    _set_vprec_range_binary64(function_inst->OpsRange64, ctx);
+    _set_vprec_precision_binary32(function_inst->OpsPrec32, ctx);
+    _set_vprec_range_binary32(function_inst->OpsRange32, ctx);
   }
 
   // treatment of arguments
   int new_flag = (function_inst->input_args == NULL && nb_args > 0);
 
   // print function info in log
-  _vprec_print_log(vprec_log_depth, "\n");
-  _vprec_print_log(vprec_log_depth, "enter in %s\t%d\t%d\t%d\t%d\n",
-                   function_inst->id, function_inst->OpsPrec64,
-                   function_inst->OpsRange64, function_inst->OpsPrec32,
-                   function_inst->OpsRange32);
+  _vprec_print_log(ctx, "\n");
+  _vprec_print_log(ctx, "enter in %s\t%d\t%d\t%d\t%d\n", function_inst->id,
+                   function_inst->OpsPrec64, function_inst->OpsRange64,
+                   function_inst->OpsPrec32, function_inst->OpsRange32);
 
   // allocate memory for arguments
   if (new_flag) {
@@ -850,10 +928,10 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
   // boolean which indicates if arguments should be rounded or not depending on
   // modes
   int mode_flag =
-      (((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) &&
-       ((VPREC_INST_MODE == vprecinst_all) ||
-        (VPREC_INST_MODE == vprecinst_arg)) &&
-       VPREC_INST_MODE != vprecinst_none);
+      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ib)) &&
+       ((ctx->vprec_inst_mode == vprecinst_all) ||
+        (ctx->vprec_inst_mode == vprecinst_arg)) &&
+       ctx->vprec_inst_mode != vprecinst_none);
 
   for (int i = 0; i < nb_args; i++) {
     // get argument type, id and size
@@ -879,7 +957,7 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
     if (type == FDOUBLE) {
       double *value = va_arg(ap, double *);
 
-      _vprec_print_log(vprec_log_depth, " - %s\tinput\tdouble\t%s\t%la\t->\t",
+      _vprec_print_log(ctx, " - %s\tinput\tdouble\t%s\t%la\t->\t",
                        function_inst->id, arg_id, *value);
 
       if ((!new_flag) && mode_flag) {
@@ -899,14 +977,14 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                 : function_inst->input_args[i].max_range;
       }
 
-      _vprec_print_log(vprec_log_depth, "%la\t(%d, %d)\n", *value,
+      _vprec_print_log(ctx, "%la\t(%d, %d)\n", *value,
                        function_inst->input_args[i].mantissa_length,
                        function_inst->input_args[i].exponent_length);
 
     } else if (type == FFLOAT) {
       float *value = va_arg(ap, float *);
 
-      _vprec_print_log(vprec_log_depth, " - %s\tinput\tfloat\t%s\t%a\t->\t",
+      _vprec_print_log(ctx, " - %s\tinput\tfloat\t%s\t%a\t->\t",
                        function_inst->id, arg_id, *value);
 
       if ((!new_flag) && mode_flag) {
@@ -927,7 +1005,7 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                 : function_inst->input_args[i].max_range;
       }
 
-      _vprec_print_log(vprec_log_depth, "%a\t(%d, %d)\n", *value,
+      _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
                        function_inst->input_args[i].mantissa_length,
                        function_inst->input_args[i].exponent_length);
 
@@ -936,14 +1014,13 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
 
       for (unsigned int j = 0; j < size; j++, value++) {
         if (value == NULL) {
-          _vprec_print_log(vprec_log_depth,
+          _vprec_print_log(ctx,
                            " - %s\tinput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
                            function_inst->id, j, arg_id);
           continue;
         }
 
-        _vprec_print_log(vprec_log_depth,
-                         " - %s\tinput[%u]\tdouble_ptr\t%s\t%la\t->\t",
+        _vprec_print_log(ctx, " - %s\tinput[%u]\tdouble_ptr\t%s\t%la\t->\t",
                          function_inst->id, j, arg_id, *value);
 
         if ((!new_flag) && mode_flag) {
@@ -965,7 +1042,7 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                   : function_inst->input_args[i].max_range;
         }
 
-        _vprec_print_log(vprec_log_depth, "%la\t(%d, %d)\n", *value,
+        _vprec_print_log(ctx, "%la\t(%d, %d)\n", *value,
                          function_inst->input_args[i].mantissa_length,
                          function_inst->input_args[i].exponent_length);
       }
@@ -974,14 +1051,13 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
 
       for (unsigned int j = 0; j < size; j++, value++) {
         if (value == NULL) {
-          _vprec_print_log(vprec_log_depth,
+          _vprec_print_log(ctx,
                            " - %s\tinput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
                            function_inst->id, j, arg_id);
           continue;
         }
 
-        _vprec_print_log(vprec_log_depth,
-                         " - %s\tinput[%u]\tfloat_ptr\t%s\t%a\t->\t",
+        _vprec_print_log(ctx, " - %s\tinput[%u]\tfloat_ptr\t%s\t%a\t->\t",
                          function_inst->id, j, arg_id, *value);
 
         if ((!new_flag) && mode_flag) {
@@ -1003,7 +1079,7 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
                   : function_inst->input_args[i].max_range;
         }
 
-        _vprec_print_log(vprec_log_depth, "%a\t(%d, %d)\n", *value,
+        _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
                          function_inst->input_args[i].mantissa_length,
                          function_inst->input_args[i].exponent_length);
       }
@@ -1011,17 +1087,18 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
   }
 
   // increment depth
-  vprec_log_depth++;
+  ctx->vprec_log_depth++;
 }
 
 // Set precision for internal operations and round output arguments for a given
 // function call
 void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                               int nb_args, va_list ap) {
+  t_context *ctx = (t_context *)context;
   interflop_function_info_t *function_info = stack->array[stack->top];
 
   // decrement depth
-  vprec_log_depth--;
+  ctx->vprec_log_depth--;
 
   if (function_info == NULL)
     logger_error("Call stack error \n");
@@ -1034,16 +1111,17 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
     interflop_function_info_t *parent_info = stack->array[stack->top + 1];
 
     if (!parent_info->isLibraryFunction && !parent_info->isIntrinsicFunction &&
-        VPREC_INST_MODE != vprecinst_arg && VPREC_INST_MODE != vprecinst_none) {
+        ctx->vprec_inst_mode != vprecinst_arg &&
+        ctx->vprec_inst_mode != vprecinst_none) {
 
       _vprec_inst_function_t *function_parent = vfc_hashmap_get(
           _vprec_func_map, vfc_hashmap_str_function(parent_info->id));
 
       if (function_parent != NULL) {
-        _set_vprec_precision_binary64(function_parent->OpsPrec64);
-        _set_vprec_range_binary64(function_parent->OpsRange64);
-        _set_vprec_precision_binary32(function_parent->OpsPrec32);
-        _set_vprec_range_binary32(function_parent->OpsRange32);
+        _set_vprec_precision_binary64(function_parent->OpsPrec64, ctx);
+        _set_vprec_range_binary64(function_parent->OpsRange64, ctx);
+        _set_vprec_precision_binary32(function_parent->OpsPrec32, ctx);
+        _set_vprec_range_binary32(function_parent->OpsRange32, ctx);
       }
     }
   }
@@ -1052,10 +1130,9 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
   int new_flag = (function_inst->output_args == NULL && nb_args > 0);
 
   // print function info in log
-  _vprec_print_log(vprec_log_depth, "exit of %s\t%d\t%d\t%d\t%d\n",
-                   function_inst->id, function_inst->OpsPrec64,
-                   function_inst->OpsRange64, function_inst->OpsPrec32,
-                   function_inst->OpsRange32);
+  _vprec_print_log(ctx, "exit of %s\t%d\t%d\t%d\t%d\n", function_inst->id,
+                   function_inst->OpsPrec64, function_inst->OpsRange64,
+                   function_inst->OpsPrec32, function_inst->OpsRange32);
 
   // allocate memory for arguments
   if (new_flag) {
@@ -1067,9 +1144,10 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
   // boolean which indicates if arguments should be rounded or not depending on
   // modes
   int mode_flag =
-      (((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) &&
-       (VPREC_INST_MODE == vprecinst_all || VPREC_INST_MODE == vprecinst_arg) &&
-       VPREC_INST_MODE != vprecinst_none);
+      (((ctx->mode == vprecmode_full) || (ctx->mode == vprecmode_ob)) &&
+       (ctx->vprec_inst_mode == vprecinst_all ||
+        ctx->vprec_inst_mode == vprecinst_arg) &&
+       ctx->vprec_inst_mode != vprecinst_none);
 
   for (int i = 0; i < nb_args; i++) {
     int type = va_arg(ap, int);
@@ -1095,7 +1173,7 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
     if (type == FDOUBLE) {
       double *value = va_arg(ap, double *);
 
-      _vprec_print_log(vprec_log_depth, " - %s\toutput\tdouble\t%s\t%la\t->\t",
+      _vprec_print_log(ctx, " - %s\toutput\tdouble\t%s\t%la\t->\t",
                        function_inst->id, arg_id, *value);
 
       if ((!new_flag) && mode_flag) {
@@ -1116,13 +1194,13 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                 : function_inst->output_args[i].max_range;
       }
 
-      _vprec_print_log(vprec_log_depth, "%la\t(%d,%d)\n", *value,
+      _vprec_print_log(ctx, "%la\t(%d,%d)\n", *value,
                        function_inst->output_args[i].mantissa_length,
                        function_inst->output_args[i].exponent_length);
     } else if (type == FFLOAT) {
       float *value = va_arg(ap, float *);
 
-      _vprec_print_log(vprec_log_depth, " - %s\toutput\tfloat\t%s\t%a\t->\t",
+      _vprec_print_log(ctx, " - %s\toutput\tfloat\t%s\t%a\t->\t",
                        function_inst->id, arg_id, *value);
 
       if ((!new_flag) && mode_flag) {
@@ -1144,7 +1222,7 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                 : function_inst->output_args[i].max_range;
       }
 
-      _vprec_print_log(vprec_log_depth, "%a\t(%d, %d)\n", *value,
+      _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
                        function_inst->output_args[i].mantissa_length,
                        function_inst->output_args[i].exponent_length);
     } else if (type == FDOUBLE_PTR) {
@@ -1153,14 +1231,12 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
       for (unsigned int j = 0; j < size; j++, value++) {
         if (value == NULL) {
           _vprec_print_log(
-              vprec_log_depth,
-              " - %s\toutput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
+              ctx, " - %s\toutput[%u]\tdouble_ptr\t%s\tNULL\t->\tNULL\n",
               function_inst->id, j, arg_id);
           continue;
         }
 
-        _vprec_print_log(vprec_log_depth,
-                         " - %s\toutput[%u]\tdouble_ptr\t%s\t%la\t->\t",
+        _vprec_print_log(ctx, " - %s\toutput[%u]\tdouble_ptr\t%s\t%la\t->\t",
                          function_inst->id, j, arg_id, *value);
 
         if ((!new_flag) && mode_flag) {
@@ -1182,7 +1258,7 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                   : function_inst->output_args[i].max_range;
         }
 
-        _vprec_print_log(vprec_log_depth, "%la\t(%d,%d)\n", *value,
+        _vprec_print_log(ctx, "%la\t(%d,%d)\n", *value,
                          function_inst->output_args[i].mantissa_length,
                          function_inst->output_args[i].exponent_length);
       }
@@ -1191,14 +1267,13 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
 
       for (unsigned int j = 0; j < size; j++, value++) {
         if (value == NULL) {
-          _vprec_print_log(vprec_log_depth,
+          _vprec_print_log(ctx,
                            " - %s\toutput[%u]\tfloat_ptr\t%s\tNULL\t->\tNULL\n",
                            function_inst->id, j, arg_id);
           continue;
         }
 
-        _vprec_print_log(vprec_log_depth,
-                         " - %s\toutput[%u]\tfloat_ptr\t%s\t%a\t->\t",
+        _vprec_print_log(ctx, " - %s\toutput[%u]\tfloat_ptr\t%s\t%a\t->\t",
                          function_inst->id, j, arg_id, *value);
 
         if ((!new_flag) && mode_flag) {
@@ -1220,13 +1295,13 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
                   : function_inst->output_args[i].max_range;
         }
 
-        _vprec_print_log(vprec_log_depth, "%a\t(%d, %d)\n", *value,
+        _vprec_print_log(ctx, "%a\t(%d, %d)\n", *value,
                          function_inst->output_args[i].mantissa_length,
                          function_inst->output_args[i].exponent_length);
       }
     }
   }
-  _vprec_print_log(vprec_log_depth, "\n");
+  _vprec_print_log(ctx, "\n");
 }
 
 /************************* FPHOOKS FUNCTIONS *************************
@@ -1272,18 +1347,19 @@ static void _interflop_div_double(double a, double b, double *c,
 }
 
 void _interflop_user_call(void *context, interflop_call_id id, va_list ap) {
+  t_context *ctx = (t_context *)context;
   switch (id) {
   case INTERFLOP_SET_PRECISION_BINARY32:
-    _set_vprec_precision_binary32(va_arg(ap, int));
+    _set_vprec_precision_binary32(va_arg(ap, int), ctx);
     break;
   case INTERFLOP_SET_PRECISION_BINARY64:
-    _set_vprec_precision_binary64(va_arg(ap, int));
+    _set_vprec_precision_binary64(va_arg(ap, int), ctx);
     break;
   case INTERFLOP_SET_RANGE_BINARY32:
-    _set_vprec_range_binary32(va_arg(ap, int));
+    _set_vprec_range_binary32(va_arg(ap, int), ctx);
     break;
   case INTERFLOP_SET_RANGE_BINARY64:
-    _set_vprec_range_binary64(va_arg(ap, int));
+    _set_vprec_range_binary64(va_arg(ap, int), ctx);
     break;
   default:
     logger_warning("Unknown interflop_call id (=%d)", id);
@@ -1351,7 +1427,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
                    "must lower than IEEE binary32 precision (%d)",
                    key_prec_b32_str, VPREC_PRECISION_BINARY32_MAX);
     } else {
-      _set_vprec_precision_binary32(val);
+      _set_vprec_precision_binary32(val, ctx);
     }
     break;
   case KEY_PREC_B64:
@@ -1367,7 +1443,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
                    "must be lower than IEEE binary64 precision (%d)",
                    key_prec_b64_str, VPREC_PRECISION_BINARY64_MAX);
     } else {
-      _set_vprec_precision_binary64(val);
+      _set_vprec_precision_binary64(val, ctx);
     }
     break;
   case KEY_RANGE_B32:
@@ -1383,7 +1459,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
                    "must be lower than IEEE binary32 range size (%d)",
                    key_range_b32_str, VPREC_RANGE_BINARY32_MAX);
     } else {
-      _set_vprec_range_binary32(val);
+      _set_vprec_range_binary32(val, ctx);
     }
     break;
   case KEY_RANGE_B64:
@@ -1399,31 +1475,31 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
                    "must be lower than IEEE binary64 range size (%d)",
                    key_range_b64_str, VPREC_RANGE_BINARY64_MAX);
     } else {
-      _set_vprec_range_binary64(val);
+      _set_vprec_range_binary64(val, ctx);
     }
     break;
   case KEY_INPUT_FILE:
     /* input file */
-    _set_vprec_input_file(arg);
+    _set_vprec_input_file(arg, ctx);
     break;
   case KEY_OUTPUT_FILE:
     /* output file */
-    _set_vprec_output_file(arg);
+    _set_vprec_output_file(arg, ctx);
     break;
   case KEY_LOG_FILE:
     /* log file */
-    _set_vprec_log_file(arg);
+    _set_vprec_log_file(arg, ctx);
     break;
   case KEY_MODE:
     /* mode */
     if (strcasecmp(VPREC_MODE_STR[vprecmode_ieee], arg) == 0) {
-      _set_vprec_mode(vprecmode_ieee);
+      _set_vprec_mode(vprecmode_ieee, ctx);
     } else if (strcasecmp(VPREC_MODE_STR[vprecmode_full], arg) == 0) {
-      _set_vprec_mode(vprecmode_full);
+      _set_vprec_mode(vprecmode_full, ctx);
     } else if (strcasecmp(VPREC_MODE_STR[vprecmode_ib], arg) == 0) {
-      _set_vprec_mode(vprecmode_ib);
+      _set_vprec_mode(vprecmode_ib, ctx);
     } else if (strcasecmp(VPREC_MODE_STR[vprecmode_ob], arg) == 0) {
-      _set_vprec_mode(vprecmode_ob);
+      _set_vprec_mode(vprecmode_ob, ctx);
     } else {
       logger_error("--%s invalid value provided, must be one of: "
                    "{ieee, full, ib, ob}.",
@@ -1433,14 +1509,11 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   case KEY_ERR_MODE:
     /* vprec error mode */
     if (strcasecmp(VPREC_ERR_MODE_STR[vprec_err_mode_rel], arg) == 0) {
-      ctx->relErr = true;
-      ctx->absErr = false;
+      _set_vprec_error_mode(vprec_err_mode_rel, ctx);
     } else if (strcasecmp(VPREC_ERR_MODE_STR[vprec_err_mode_abs], arg) == 0) {
-      ctx->relErr = false;
-      ctx->absErr = true;
+      _set_vprec_error_mode(vprec_err_mode_abs, ctx);
     } else if (strcasecmp(VPREC_ERR_MODE_STR[vprec_err_mode_all], arg) == 0) {
-      ctx->relErr = true;
-      ctx->absErr = true;
+      _set_vprec_error_mode(vprec_err_mode_all, ctx);
     } else {
       logger_error("--%s invalid value provided, must be one of: "
                    "{rel, abs, all}.",
@@ -1450,22 +1523,24 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   case KEY_ERR_EXP:
     /* exponent of the maximum absolute error */
     errno = 0;
-    ctx->absErr_exp = strtol(arg, &endptr, 10);
+    long exp = strtol(arg, &endptr, 10);
     if (errno != 0) {
       logger_error("--%s invalid value provided, must be an integer",
                    key_err_exp_str);
+    } else {
+      _set_vprec_max_abs_err_exp(exp, ctx);
     }
     break;
   case KEY_INSTRUMENT:
     /* instrumentation mode */
     if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_arg);
+      _set_vprec_inst_mode(vprecinst_arg, ctx);
     } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_op], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_op);
+      _set_vprec_inst_mode(vprecinst_op, ctx);
     } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_all], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_all);
+      _set_vprec_inst_mode(vprecinst_all, ctx);
     } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_none], arg) == 0) {
-      _set_vprec_inst_mode(vprecinst_none);
+      _set_vprec_inst_mode(vprecinst_none, ctx);
     } else {
       logger_error("--%s invalid value provided, must be one of: "
                    "{arguments, operations, all}.",
@@ -1474,11 +1549,11 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     break;
   case KEY_DAZ:
     /* denormals-are-zero */
-    ctx->daz = true;
+    _set_vprec_daz(true, ctx);
     break;
   case KEY_FTZ:
     /* flush-to-zero */
-    ctx->ftz = true;
+    _set_vprec_ftz(true, ctx);
     break;
   case KEY_PRESET:
     /* preset */
@@ -1509,12 +1584,12 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     }
 
     /* set precision */
-    _set_vprec_precision_binary32(precision);
-    _set_vprec_precision_binary64(precision);
+    _set_vprec_precision_binary32(precision, ctx);
+    _set_vprec_precision_binary64(precision, ctx);
 
     /* set range */
-    _set_vprec_range_binary32(range);
-    _set_vprec_range_binary64(range);
+    _set_vprec_range_binary32(range, ctx);
+    _set_vprec_range_binary64(range, ctx);
 
     break;
   default:
@@ -1526,6 +1601,16 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 static struct argp argp = {options, parse_opt, "", "", NULL, NULL, NULL};
 
 void init_context(t_context *ctx) {
+  ctx->vprec_input_file = NULL;
+  ctx->vprec_output_file = NULL;
+  ctx->vprec_log_file = NULL;
+  ctx->vprec_inst_mode = VPREC_INST_MODE_DEFAULT;
+  ctx->vprec_log_depth = 0;
+  ctx->binary32_precision = VPREC_PRECISION_BINARY32_DEFAULT;
+  ctx->binary32_range = VPREC_RANGE_BINARY32_DEFAULT;
+  ctx->binary64_precision = VPREC_PRECISION_BINARY64_DEFAULT;
+  ctx->binary64_range = VPREC_RANGE_BINARY64_DEFAULT;
+  ctx->mode = VPREC_MODE_DEFAULT;
   ctx->relErr = true;
   ctx->absErr = false;
   ctx->absErr_exp = -DOUBLE_EXP_MIN;
@@ -1559,41 +1644,22 @@ void print_information_header(void *context) {
       "%s = %s and "
       "%s = %s"
       "\n",
-      key_prec_b32_str, VPRECLIB_BINARY32_PRECISION, key_range_b32_str,
-      VPRECLIB_BINARY32_RANGE, key_prec_b64_str, VPRECLIB_BINARY64_PRECISION,
-      key_range_b64_str, VPRECLIB_BINARY64_RANGE, key_mode_str,
-      VPREC_MODE_STR[VPRECLIB_MODE], key_err_mode_str,
+      key_prec_b32_str, ctx->binary32_precision, key_range_b32_str,
+      ctx->binary32_range, key_prec_b64_str, ctx->binary64_precision,
+      key_range_b64_str, ctx->binary64_range, key_mode_str,
+      VPREC_MODE_STR[ctx->mode], key_err_mode_str,
       (ctx->relErr && !ctx->absErr)   ? VPREC_ERR_MODE_STR[vprec_err_mode_rel]
       : (!ctx->relErr && ctx->absErr) ? VPREC_ERR_MODE_STR[vprec_err_mode_abs]
       : (ctx->relErr && ctx->absErr)  ? VPREC_ERR_MODE_STR[vprec_err_mode_all]
                                       : VPREC_ERR_MODE_STR[vprec_err_mode_rel],
       key_err_exp_str, (ctx->absErr_exp), key_daz_str,
       ctx->daz ? "true" : "false", key_ftz_str, ctx->ftz ? "true" : "false",
-      key_instrument_str, VPREC_INST_MODE_STR[VPREC_INST_MODE]);
+      key_instrument_str, VPREC_INST_MODE_STR[ctx->vprec_inst_mode]);
 }
 
-void _interflop_finalize(__attribute__((unused)) void *context) {
-  /* save the hashmap */
-  if (vprec_output_file != NULL) {
-    FILE *f = fopen(vprec_output_file, "w");
-    if (f != NULL) {
-      _vprec_write_hasmap(f);
-      fclose(f);
-    } else {
-      logger_error("Output file can't be written");
-    }
-  }
-
-  /* close log file */
-  if (vprec_log_file != NULL) {
-    fclose(vprec_log_file);
-  }
-
-  /* free vprec_function_map */
-  vfc_hashmap_free(_vprec_func_map);
-
-  /* destroy vprec_function_map */
-  vfc_hashmap_destroy(_vprec_func_map);
+void _interflop_finalize(void *context) {
+  t_context *ctx = (t_context *)context;
+  _vprec_function_instrumentation_finalize(ctx);
 }
 
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
@@ -1601,16 +1667,6 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
 
   /* Initialize the logger */
   logger_init();
-
-  /* Initialize the vprec_function_map */
-  _vprec_func_map = vfc_hashmap_create();
-
-  /* Setting to default values */
-  _set_vprec_precision_binary32(VPREC_PRECISION_BINARY32_DEFAULT);
-  _set_vprec_precision_binary64(VPREC_PRECISION_BINARY64_DEFAULT);
-  _set_vprec_range_binary32(VPREC_RANGE_BINARY32_DEFAULT);
-  _set_vprec_range_binary64(VPREC_RANGE_BINARY64_DEFAULT);
-  _set_vprec_mode(VPREC_MODE_DEFAULT);
 
   t_context *ctx = malloc(sizeof(t_context));
   *context = ctx;
@@ -1621,16 +1677,7 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
 
   print_information_header(ctx);
 
-  /* read the hashmap */
-  if (vprec_input_file != NULL) {
-    FILE *f = fopen(vprec_input_file, "r");
-    if (f != NULL) {
-      _vprec_read_hasmap(f);
-      fclose(f);
-    } else {
-      logger_error("Input file can't be found");
-    }
-  }
+  _vprec_function_instrumentation_init(ctx);
 
   struct interflop_backend_interface_t interflop_backend_vprec = {
       _interflop_add_float,
