@@ -40,6 +40,7 @@
 #include "common/float_struct.h"
 #include "common/float_utils.h"
 #include "common/interflop.h"
+#include "common/interflop_stdlib.h"
 #include "common/logger.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
@@ -801,7 +802,7 @@ static struct argp argp = {options, parse_opt, "", "", argpc, NULL, NULL};
 
 /* allocate the context */
 void _vprec_alloc_context(void **context) {
-  t_context *ctx = (t_context *)malloc(sizeof(t_context));
+  t_context *ctx = (t_context *)interflop_malloc(sizeof(t_context));
   _vfi_alloc_context(ctx);
   *context = ctx;
 }

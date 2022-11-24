@@ -20,10 +20,9 @@
 
 #include <argp.h>
 #include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "common/interflop.h"
+#include "common/interflop_stdlib.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
 #include "interflop_vprec.h"
@@ -197,10 +196,10 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
                 &function.n_calls) == 12) {
     // allocate space for input arguments
     function.input_args =
-        malloc(function.nb_input_args * sizeof(_vfi_argument_data_t));
+        interflop_malloc(function.nb_input_args * sizeof(_vfi_argument_data_t));
     // allocate space for output arguments
-    function.output_args =
-        malloc(function.nb_output_args * sizeof(_vfi_argument_data_t));
+    function.output_args = interflop_malloc(function.nb_output_args *
+                                            sizeof(_vfi_argument_data_t));
 
     // get input arguments precision
     for (int i = 0; i < function.nb_input_args; i++) {
@@ -229,7 +228,7 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
     }
 
     // insert in the hashmap
-    _vfi_t *address = malloc(sizeof(_vfi_t));
+    _vfi_t *address = interflop_malloc(sizeof(_vfi_t));
     (*address) = function;
     vfc_hashmap_insert(ctx->vfi->map, vfc_hashmap_str_function(function.id),
                        address);
@@ -250,7 +249,7 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
 /* allocate the context */
 void _vfi_alloc_context(void *context) {
   t_context *ctx = (t_context *)context;
-  ctx->vfi = (t_context_vfi *)malloc(sizeof(t_context_vfi));
+  ctx->vfi = (t_context_vfi *)interflop_malloc(sizeof(t_context_vfi));
 }
 
 /* initialize the context */
@@ -326,7 +325,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
   // if the function is not in the hashtable
   if (function_inst == NULL) {
-    function_inst = malloc(sizeof(_vfi_t));
+    function_inst = interflop_malloc(sizeof(_vfi_t));
 
     // initialize the structure
     strcpy(function_inst->id, function_info->id);
@@ -375,7 +374,8 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
   // allocate memory for arguments
   if (new_flag) {
-    function_inst->input_args = malloc(sizeof(_vfi_argument_data_t) * nb_args);
+    function_inst->input_args =
+        interflop_malloc(sizeof(_vfi_argument_data_t) * nb_args);
     function_inst->nb_input_args = nb_args;
   }
 
@@ -592,7 +592,8 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
 
   // allocate memory for arguments
   if (new_flag) {
-    function_inst->output_args = malloc(sizeof(_vfi_argument_data_t) * nb_args);
+    function_inst->output_args =
+        interflop_malloc(sizeof(_vfi_argument_data_t) * nb_args);
     function_inst->nb_output_args = nb_args;
   }
 
