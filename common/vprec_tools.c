@@ -17,9 +17,11 @@
  *     Verificarlo Contributors                                              *\
  *                                                                           *\
  ****************************************************************************/
-#include "vprec_tools.h"
+#include <math.h>
+  
 #include "float_const.h"
 #include "float_struct.h"
+#include "vprec_tools.h"
 
 /**
  * round the mantissa of 'x' on the precision specified by 'precision'

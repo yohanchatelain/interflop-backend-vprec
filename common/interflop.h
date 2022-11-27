@@ -78,6 +78,9 @@ typedef struct interflop_function_stack {
 } interflop_function_stack_t;
 
 struct interflop_backend_interface_t {
+  const char *(*backend_name)(void);
+  const char *(*backend_version)(void);
+
   void (*interflop_add_float)(float a, float b, float *c, void *context);
   void (*interflop_sub_float)(float a, float b, float *c, void *context);
   void (*interflop_mul_float)(float a, float b, float *c, void *context);
@@ -91,6 +94,12 @@ struct interflop_backend_interface_t {
   void (*interflop_div_double)(double a, double b, double *c, void *context);
   void (*interflop_cmp_double)(enum FCMP_PREDICATE p, double a, double b,
                                int *c, void *context);
+
+  void (*interflop_cast_double_to_float)(double a, float *b, void *context);
+  void (*interflop_madd_double)(double a, double b, double c, double *res,
+                                void *context);
+  void (*interflop_madd_float)(float a, float b, float c, float *res,
+                               void *context);
 
   void (*interflop_enter_function)(interflop_function_stack_t *stack,
                                    void *context, int nb_args, va_list ap);
@@ -119,7 +128,6 @@ struct interflop_backend_interface_t {
  * above instrumentation hooks.
  * */
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context);
+struct interflop_backend_interface_t interflop_init(void *context);
 
 #endif /* __INTERFLOP_H__ */

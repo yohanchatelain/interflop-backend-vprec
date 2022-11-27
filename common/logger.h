@@ -20,6 +20,7 @@
 #ifndef __LOGGER_H__
 #define __LOGGER_H__
 
+#include "interflop_stdlib.h"
 #include <stdarg.h>
 
 /* Display the info message */
@@ -36,6 +37,6 @@ void vlogger_warning(const char *fmt, va_list argp);
 /* Display the error message */
 void vlogger_error(const char *fmt, va_list argp);
 
-void logger_init(void);
+void logger_init(File *stream);
 
 #endif /* __LOGGER_H__ */

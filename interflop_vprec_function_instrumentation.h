@@ -21,7 +21,10 @@
 #ifndef __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 #define __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 
-#include <stdio.h>
+// #include <stdio.h>
+#include "common/interflop.h"
+#include "common/interflop_stdlib.h"
+#include "common/vfc_hashmap.h"
 
 /* define instrumentation modes */
 typedef enum {
@@ -57,9 +60,9 @@ typedef struct _vprec_function_instrumentation {
   // Indicate if the function is intrinsic
   short isIntrinsicFunction;
   // Counter of Floating Point instruction
-  size_t useFloat;
+  ISize_t useFloat;
   // Counter of Floating Point instruction
-  size_t useDouble;
+  ISize_t useDouble;
   // Internal Operations Range64
   int OpsRange64;
   // Internal Operations Prec64
@@ -88,9 +91,9 @@ typedef struct {
   vfc_hashmap_t map;
   const char *vprec_input_file;
   const char *vprec_output_file;
-  FILE *vprec_log_file;
+  File *vprec_log_file;
   vprec_inst_mode vprec_inst_mode;
-  size_t vprec_log_depth;
+  ISize_t vprec_log_depth;
 } t_context_vfi;
 
 /* Setter functions for contextual variables */

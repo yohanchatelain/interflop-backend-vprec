@@ -19,7 +19,8 @@
  ****************************************************************************/
 
 #include <argp.h>
-#include <limits.h>
+#include <math.h>
+// #include <limits.h>
 
 #include "common/interflop.h"
 #include "common/interflop_stdlib.h"
@@ -62,9 +63,10 @@ void _set_vprec_output_file(const char *output_file, void *context) {
 void _set_vprec_log_file(const char *log_file, void *context) {
 
   t_context *ctx = (t_context *)context;
-  ctx->vfi->vprec_log_file = fopen(log_file, "w");
+  int error = 0;
+  ctx->vfi->vprec_log_file = interflop_fopen(log_file, "w", &error);
   if (ctx->vfi->vprec_log_file == NULL) {
-    logger_error("Log file can't be written");
+    logger_error("Log file can't be written: %s", interflop_strerror(error));
   }
 }
 
@@ -82,13 +84,16 @@ void _set_vprec_inst_mode(vprec_inst_mode mode, void *context) {
 
 void _parse_key_instrument(char *arg, t_context *ctx) {
   /* instrumentation mode */
-  if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
+  if (interflop_strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
     _set_vprec_inst_mode(vprecinst_arg, ctx);
-  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_op], arg) == 0) {
+  } else if (interflop_strcasecmp(VPREC_INST_MODE_STR[vprecinst_op], arg) ==
+             0) {
     _set_vprec_inst_mode(vprecinst_op, ctx);
-  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_all], arg) == 0) {
+  } else if (interflop_strcasecmp(VPREC_INST_MODE_STR[vprecinst_all], arg) ==
+             0) {
     _set_vprec_inst_mode(vprecinst_all, ctx);
-  } else if (strcasecmp(VPREC_INST_MODE_STR[vprecinst_none], arg) == 0) {
+  } else if (interflop_strcasecmp(VPREC_INST_MODE_STR[vprecinst_none], arg) ==
+             0) {
     _set_vprec_inst_mode(vprecinst_none, ctx);
   } else {
     logger_error("--%s invalid value provided, must be one of: "
@@ -154,46 +159,133 @@ void _vfi_write_hasmap(FILE *fout, t_context *ctx) {
         get_value_at(ctx->vfi->map->items, ii) != 0) {
       _vfi_t *function = (_vfi_t *)get_value_at(ctx->vfi->map->items, ii);
 
-      fprintf(fout, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-              function->id, function->isLibraryFunction,
-              function->isIntrinsicFunction, function->useFloat,
-              function->useDouble, function->OpsPrec64, function->OpsRange64,
-              function->OpsPrec32, function->OpsRange32,
-              function->nb_input_args, function->nb_output_args,
-              function->n_calls);
+      interflop_fprintf(
+          fout, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+          function->id, function->isLibraryFunction,
+          function->isIntrinsicFunction, function->useFloat,
+          function->useDouble, function->OpsPrec64, function->OpsRange64,
+          function->OpsPrec32, function->OpsRange32, function->nb_input_args,
+          function->nb_output_args, function->n_calls);
       for (int i = 0; i < function->nb_input_args; i++) {
-        fprintf(fout, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->input_args[i].arg_id,
-                function->input_args[i].data_type,
-                function->input_args[i].mantissa_length,
-                function->input_args[i].exponent_length,
-                function->input_args[i].min_range,
-                function->input_args[i].max_range);
+        interflop_fprintf(fout, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                          function->input_args[i].arg_id,
+                          function->input_args[i].data_type,
+                          function->input_args[i].mantissa_length,
+                          function->input_args[i].exponent_length,
+                          function->input_args[i].min_range,
+                          function->input_args[i].max_range);
       }
       for (int i = 0; i < function->nb_output_args; i++) {
-        fprintf(fout, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->output_args[i].arg_id,
-                function->output_args[i].data_type,
-                function->output_args[i].mantissa_length,
-                function->output_args[i].exponent_length,
-                function->output_args[i].min_range,
-                function->output_args[i].max_range);
+        interflop_fprintf(fout, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
+                          function->output_args[i].arg_id,
+                          function->output_args[i].data_type,
+                          function->output_args[i].mantissa_length,
+                          function->output_args[i].exponent_length,
+                          function->output_args[i].min_range,
+                          function->output_args[i].max_range);
       }
     }
   }
+}
+
+/* Helper function scanning an integer */
+/* return the integer upon success */
+/* otherwise call logger_error  */
+long _vfi_scan_int(char *token, const char *field) {
+  int error = 0;
+  char *endptr;
+  long res = interflop_strtol(token, &endptr, &error);
+  if (error != 0) {
+    logger_error("Error while reading hashmap config file (field: %s)\n",
+                 field);
+  }
+  return res;
+}
+
+int _vfi_scan_line(FILE *fi, char **tokens) {
+
+  const int line_max_size = 2048;
+  char line[line_max_size];
+  interflop_fgets(line, line_max_size, fi);
+
+  char *tabptr;
+  char *token = interflop_strtok_r(line, "\t", &tabptr);
+  int nb_token = 0;
+  while (token) {
+    tokens[nb_token] = token;
+    nb_token++;
+    token = interflop_strtok_r(NULL, "\t", &tabptr);
+  }
+  return nb_token;
+}
+
+int _vfi_scan_header(FILE *fi, _vfi_t *function_ptr) {
+  const int elt_to_read = 12;
+  char *tokens[elt_to_read];
+  int nb_token = _vfi_scan_line(fi, tokens);
+  if (nb_token != elt_to_read) {
+    return nb_token;
+  }
+
+  interflop_strcpy(function_ptr->id, tokens[0]);
+  function_ptr->isLibraryFunction =
+      _vfi_scan_int(tokens[1], "isLibraryFunction");
+  function_ptr->isIntrinsicFunction =
+      _vfi_scan_int(tokens[2], "isIntrinsicFunction");
+  function_ptr->useFloat = _vfi_scan_int(tokens[3], "useFloat");
+  function_ptr->useDouble = _vfi_scan_int(tokens[4], "useDouble");
+  function_ptr->OpsPrec64 = _vfi_scan_int(tokens[5], "OpsPrec64");
+  function_ptr->OpsRange64 = _vfi_scan_int(tokens[6], "OpsRange64");
+  function_ptr->OpsPrec32 = _vfi_scan_int(tokens[7], "OpsPrec32");
+  function_ptr->OpsRange32 = _vfi_scan_int(tokens[8], "OpsRange32");
+  function_ptr->nb_input_args = _vfi_scan_int(tokens[9], "nb_input_args");
+  function_ptr->nb_output_args = _vfi_scan_int(tokens[10], "nb_output_args");
+  function_ptr->n_calls = _vfi_scan_int(tokens[11], "n_calls");
+
+  return nb_token;
+}
+
+int _vfi_scan_input(FILE *fi, _vfi_t *function_ptr, int arg_pos) {
+  const int elt_to_read = 7;
+  char *tokens[elt_to_read];
+  int nb_token = _vfi_scan_line(fi, tokens);
+
+  _vfi_argument_data_t *arg_data = &function_ptr->input_args[arg_pos];
+
+  // tokens[0] == "input:"
+  interflop_strcpy(arg_data->arg_id, tokens[1]);
+  arg_data->data_type = _vfi_scan_int(tokens[2], "data_type");
+  arg_data->mantissa_length = _vfi_scan_int(tokens[3], "mantissa_length");
+  arg_data->exponent_length = _vfi_scan_int(tokens[4], "exponent_length");
+  arg_data->min_range = _vfi_scan_int(tokens[5], "min_range");
+  arg_data->max_range = _vfi_scan_int(tokens[6], "max_range");
+
+  return nb_token;
+}
+
+int _vfi_scan_output(FILE *fi, _vfi_t *function_ptr, int arg_pos) {
+  const int elt_to_read = 7;
+  char *tokens[elt_to_read];
+  int nb_token = _vfi_scan_line(fi, tokens);
+
+  _vfi_argument_data_t *arg_data = &function_ptr->output_args[arg_pos];
+
+  // tokens[0] == "output:"
+  interflop_strcpy(arg_data->arg_id, tokens[1]);
+  arg_data->data_type = _vfi_scan_int(tokens[2], "data_type");
+  arg_data->mantissa_length = _vfi_scan_int(tokens[3], "mantissa_length");
+  arg_data->exponent_length = _vfi_scan_int(tokens[4], "exponent_length");
+  arg_data->min_range = _vfi_scan_int(tokens[5], "min_range");
+  arg_data->max_range = _vfi_scan_int(tokens[6], "max_range");
+
+  return nb_token;
 }
 
 // Read and initialize the hashmap from the given file
 void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
   _vfi_t function;
 
-  while (fscanf(fin, "%s\t%hd\t%hd\t%zu\t%zu\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-                function.id, &function.isLibraryFunction,
-                &function.isIntrinsicFunction, &function.useFloat,
-                &function.useDouble, &function.OpsPrec64, &function.OpsRange64,
-                &function.OpsPrec32, &function.OpsRange32,
-                &function.nb_input_args, &function.nb_output_args,
-                &function.n_calls) == 12) {
+  while (_vfi_scan_header(fin, &function) == 12) {
     // allocate space for input arguments
     function.input_args =
         interflop_malloc(function.nb_input_args * sizeof(_vfi_argument_data_t));
@@ -201,28 +293,17 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
     function.output_args = interflop_malloc(function.nb_output_args *
                                             sizeof(_vfi_argument_data_t));
 
+    const int elt_to_read = 7;
     // get input arguments precision
     for (int i = 0; i < function.nb_input_args; i++) {
-      if (!fscanf(fin, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.input_args[i].arg_id,
-                  &function.input_args[i].data_type,
-                  &function.input_args[i].mantissa_length,
-                  &function.input_args[i].exponent_length,
-                  &function.input_args[i].min_range,
-                  &function.input_args[i].max_range)) {
+      if (_vfi_scan_input(fin, &function, i) != elt_to_read) {
         logger_error("Can't read input arguments of %s\n", function.id);
       }
     }
 
     // get output arguments precision
     for (int i = 0; i < function.nb_output_args; i++) {
-      if (!fscanf(fin, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.output_args[i].arg_id,
-                  &function.output_args[i].data_type,
-                  &function.output_args[i].mantissa_length,
-                  &function.output_args[i].exponent_length,
-                  &function.output_args[i].min_range,
-                  &function.output_args[i].max_range)) {
+      if (_vfi_scan_output(fin, &function, i) != elt_to_read) {
         logger_error("Can't read output arguments of %s\n", function.id);
       }
     }
@@ -241,8 +322,8 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
     if (ctx->vfi->vprec_log_file != NULL) {                                    \
       for (size_t _vprec_d = 0; _vprec_d < ctx->vfi->vprec_log_depth;          \
            _vprec_d++)                                                         \
-        fprintf(ctx->vfi->vprec_log_file, "\t");                               \
-      fprintf(ctx->vfi->vprec_log_file, _vprec_str, ##__VA_ARGS__);            \
+        interflop_fprintf(ctx->vfi->vprec_log_file, "\t");                     \
+      interflop_fprintf(ctx->vfi->vprec_log_file, _vprec_str, ##__VA_ARGS__);  \
     }                                                                          \
   })
 
@@ -271,12 +352,13 @@ void _vfi_init(void *context) {
   ctx->vfi->map = vfc_hashmap_create();
   /* read the hashmap */
   if (ctx->vfi->vprec_input_file != NULL) {
-    FILE *f = fopen(ctx->vfi->vprec_input_file, "r");
+    int error = 0;
+    File *f = interflop_fopen(ctx->vfi->vprec_input_file, "r", &error);
     if (f != NULL) {
       _vfi_read_hasmap(f, ctx);
-      fclose(f);
+      interflop_fclose(f);
     } else {
-      logger_error("Input file can't be found");
+      logger_error("Input file can't be found: %s", interflop_strerror(error));
     }
   }
 }
@@ -287,18 +369,20 @@ void _vfi_finalize(void *context) {
 
   /* save the hashmap */
   if (ctx->vfi->vprec_output_file != NULL) {
-    FILE *f = fopen(ctx->vfi->vprec_output_file, "w");
+    int error = 0;
+    File *f = interflop_fopen(ctx->vfi->vprec_output_file, "w", &error);
     if (f != NULL) {
       _vfi_write_hasmap(f, ctx);
-      fclose(f);
+      interflop_fclose(f);
     } else {
-      logger_error("Output file can't be written");
+      logger_error("Output file can't be written: %s",
+                   interflop_strerror(error));
     }
   }
 
   /* close log file */
   if (ctx->vfi->vprec_log_file != NULL) {
-    fclose(ctx->vfi->vprec_log_file);
+    interflop_fclose(ctx->vfi->vprec_log_file);
   }
 
   /* free vprec_function_map */
@@ -328,7 +412,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
     function_inst = interflop_malloc(sizeof(_vfi_t));
 
     // initialize the structure
-    strcpy(function_inst->id, function_info->id);
+    interflop_strcpy(function_inst->id, function_info->id);
     function_inst->isLibraryFunction = function_info->isLibraryFunction;
     function_inst->isIntrinsicFunction = function_info->isIntrinsicFunction;
     function_inst->useFloat = function_info->useFloat;
@@ -395,7 +479,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
     if (new_flag) {
       function_inst->input_args[i].data_type = type;
-      strcpy(function_inst->input_args[i].arg_id, arg_id);
+      interflop_strcpy(function_inst->input_args[i].arg_id, arg_id);
       function_inst->input_args[i].min_range = INT_MAX;
       function_inst->input_args[i].max_range = INT_MIN;
       function_inst->input_args[i].exponent_length =
@@ -420,7 +504,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
             function_inst->input_args[i].mantissa_length);
       }
 
-      if (!(isnan(*value) || isinf(*value))) {
+      if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->input_args[i].min_range =
             (floor(*value) < function_inst->input_args[i].min_range || new_flag)
                 ? floor(*value)
@@ -447,15 +531,14 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
             function_inst->input_args[i].mantissa_length);
       }
 
-      if (!(isnan(*value) || isinf(*value))) {
+      if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->input_args[i].min_range =
-            (floorf(*value) < function_inst->input_args[i].min_range ||
-             new_flag)
-                ? floorf(*value)
+            (floor(*value) < function_inst->input_args[i].min_range || new_flag)
+                ? floor(*value)
                 : function_inst->input_args[i].min_range;
         function_inst->input_args[i].max_range =
-            (ceilf(*value) > function_inst->input_args[i].max_range || new_flag)
-                ? ceilf(*value)
+            (ceil(*value) > function_inst->input_args[i].max_range || new_flag)
+                ? ceil(*value)
                 : function_inst->input_args[i].max_range;
       }
 
@@ -483,7 +566,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
               function_inst->input_args[i].mantissa_length);
         }
 
-        if (!(isnan(*value) || isinf(*value))) {
+        if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->input_args[i].min_range =
               (floor(*value) < function_inst->input_args[i].min_range ||
                new_flag)
@@ -520,16 +603,16 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
               function_inst->input_args[i].mantissa_length);
         }
 
-        if (!(isnan(*value) || isinf(*value))) {
+        if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->input_args[i].min_range =
-              (floorf(*value) < function_inst->input_args[i].min_range ||
+              (floor(*value) < function_inst->input_args[i].min_range ||
                new_flag)
-                  ? floorf(*value)
+                  ? floor(*value)
                   : function_inst->input_args[i].min_range;
           function_inst->input_args[i].max_range =
-              (ceilf(*value) > function_inst->input_args[i].max_range ||
+              (ceil(*value) > function_inst->input_args[i].max_range ||
                new_flag)
-                  ? ceilf(*value)
+                  ? ceil(*value)
                   : function_inst->input_args[i].max_range;
         }
 
@@ -613,7 +696,7 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
     if (new_flag) {
       // initialize arguments data
       function_inst->output_args[i].data_type = type;
-      strcpy(function_inst->output_args[i].arg_id, arg_id);
+      interflop_strcpy(function_inst->output_args[i].arg_id, arg_id);
       function_inst->output_args[i].exponent_length =
           (type == FDOUBLE || type == FDOUBLE_PTR)
               ? VPREC_RANGE_BINARY64_DEFAULT
@@ -638,7 +721,7 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
             function_inst->output_args[i].mantissa_length);
       }
 
-      if (!(isnan(*value) || isinf(*value))) {
+      if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->output_args[i].min_range =
             (floor(*value) < function_inst->output_args[i].min_range ||
              new_flag)
@@ -665,16 +748,15 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
             function_inst->output_args[i].mantissa_length);
       }
 
-      if (!(isnan(*value) || isinf(*value))) {
+      if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->output_args[i].min_range =
-            (floorf(*value) < function_inst->output_args[i].min_range ||
+            (floor(*value) < function_inst->output_args[i].min_range ||
              new_flag)
-                ? floorf(*value)
+                ? floor(*value)
                 : function_inst->output_args[i].min_range;
         function_inst->output_args[i].max_range =
-            (ceilf(*value) > function_inst->output_args[i].max_range ||
-             new_flag)
-                ? ceilf(*value)
+            (ceil(*value) > function_inst->output_args[i].max_range || new_flag)
+                ? ceil(*value)
                 : function_inst->output_args[i].max_range;
       }
 
@@ -701,7 +783,7 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
               function_inst->output_args[i].mantissa_length);
         }
 
-        if (!(isnan(*value) || isinf(*value))) {
+        if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->output_args[i].min_range =
               (floor(*value) < function_inst->output_args[i].min_range ||
                new_flag)
@@ -738,16 +820,16 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
               function_inst->output_args[i].mantissa_length);
         }
 
-        if (!(isnan(*value) || isinf(*value))) {
+        if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->output_args[i].min_range =
-              (floorf(*value) < function_inst->output_args[i].min_range ||
+              (floor(*value) < function_inst->output_args[i].min_range ||
                new_flag)
-                  ? floorf(*value)
+                  ? floor(*value)
                   : function_inst->output_args[i].min_range;
           function_inst->output_args[i].max_range =
-              (ceilf(*value) > function_inst->output_args[i].max_range ||
+              (ceil(*value) > function_inst->output_args[i].max_range ||
                new_flag)
-                  ? ceilf(*value)
+                  ? ceil(*value)
                   : function_inst->output_args[i].max_range;
         }
 
