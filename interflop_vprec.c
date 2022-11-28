@@ -42,10 +42,10 @@
 #include "common/float_struct.h"
 #include "common/float_utils.h"
 #include "common/fmaqApprox.h"
-#include "common/interflop.h"
 #include "common/logger.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
+#include "interflop-stdlib/interflop.h"
 #include "interflop_vprec.h"
 #include "interflop_vprec_function_instrumentation.h"
 

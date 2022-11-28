@@ -23,8 +23,8 @@
 
 #include "interflop-stdlib/interflop_stdlib.h"
 
-#include "common/interflop.h"
 #include "common/vfc_hashmap.h"
+#include "interflop-stdlib/interflop.h"
 
 /* define instrumentation modes */
 typedef enum {
