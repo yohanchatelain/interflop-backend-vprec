@@ -31,7 +31,7 @@
 #include "common/vprec_tools.h"
 #include "interflop_vprec_function_instrumentation.h"
 
-#define INTERFLOP_API(name) interflop_vprec_##name
+#define INTERFLOP_VPREC_API(name) interflop_vprec_##name
 
 /* define default environment variables and default parameters */
 
@@ -143,7 +143,7 @@ typedef struct {
   IBool absErr;
   IBool daz;
   IBool ftz;
-} t_context;
+} vprec_context_t;
 
 typedef struct {
   unsigned int precision_binary32;
@@ -158,10 +158,10 @@ typedef struct {
   unsigned int ftz;
 } vprec_conf_t;
 
-void _set_vprec_precision_binary32(int precision, t_context *ctx);
-void _set_vprec_range_binary32(int range, t_context *ctx);
-void _set_vprec_precision_binary64(int precision, t_context *ctx);
-void _set_vprec_range_binary64(int range, t_context *ctx);
+void _set_vprec_precision_binary32(int precision, vprec_context_t *ctx);
+void _set_vprec_range_binary32(int range, vprec_context_t *ctx);
+void _set_vprec_precision_binary64(int precision, vprec_context_t *ctx);
+void _set_vprec_range_binary64(int range, vprec_context_t *ctx);
 float _vprec_round_binary32(float a, char is_input, void *context,
                             int binary32_range, int binary32_precision);
 double _vprec_round_binary64(double a, char is_input, void *context,
@@ -176,34 +176,41 @@ void vprec_set_debug_print_op(void (*printOpHandler)(
     int nbArg, const char *name, const double *args, const double *res));
 
 /* Interflop API */
-const char *INTERFLOP_API(get_backend_name)(void);
-const char *INTERFLOP_API(get_backend_version)(void);
+const char *INTERFLOP_VPREC_API(get_backend_name)(void);
+const char *INTERFLOP_VPREC_API(get_backend_version)(void);
 
-void INTERFLOP_API(pre_init)(File *stream, interflop_panic_t panic,
-                             void **context);
-void INTERFLOP_API(CLI)(int argc, char **argv, void *context);
-struct interflop_backend_interface_t INTERFLOP_API(init)(void *context);
+void INTERFLOP_VPREC_API(pre_init)(File *stream, interflop_panic_t panic,
+                                   void **context);
+void INTERFLOP_VPREC_API(CLI)(int argc, char **argv, void *context);
+struct interflop_backend_interface_t INTERFLOP_VPREC_API(init)(void *context);
 
-void INTERFLOP_API(configure)(vprec_conf_t conf, void *context);
-void INTERFLOP_API(add_float)(float a, float b, float *c, void *context);
-void INTERFLOP_API(sub_float)(float a, float b, float *c, void *context);
-void INTERFLOP_API(mul_float)(float a, float b, float *c, void *context);
-void INTERFLOP_API(div_float)(float a, float b, float *c, void *context);
-void INTERFLOP_API(add_double)(double a, double b, double *c, void *context);
-void INTERFLOP_API(sub_double)(double a, double b, double *c, void *context);
-void INTERFLOP_API(mul_double)(double a, double b, double *c, void *context);
-void INTERFLOP_API(div_double)(double a, double b, double *c, void *context);
-void INTERFLOP_API(cast_double_to_float)(double a, float *b, void *context);
-void INTERFLOP_API(madd_float)(float a, float b, float c, float *res,
-                               void *context);
-void INTERFLOP_API(madd_double)(double a, double b, double c, double *res,
-                                void *context);
-void INTERFLOP_API(enter_function)(interflop_function_stack_t *stack,
-                                   void *context, int nb_args, va_list ap);
-void INTERFLOP_API(exit_function)(interflop_function_stack_t *stack,
-                                  void *context, int nb_args, va_list ap);
+void INTERFLOP_VPREC_API(configure)(vprec_conf_t conf, void *context);
+void INTERFLOP_VPREC_API(add_float)(float a, float b, float *c, void *context);
+void INTERFLOP_VPREC_API(sub_float)(float a, float b, float *c, void *context);
+void INTERFLOP_VPREC_API(mul_float)(float a, float b, float *c, void *context);
+void INTERFLOP_VPREC_API(div_float)(float a, float b, float *c, void *context);
+void INTERFLOP_VPREC_API(add_double)(double a, double b, double *c,
+                                     void *context);
+void INTERFLOP_VPREC_API(sub_double)(double a, double b, double *c,
+                                     void *context);
+void INTERFLOP_VPREC_API(mul_double)(double a, double b, double *c,
+                                     void *context);
+void INTERFLOP_VPREC_API(div_double)(double a, double b, double *c,
+                                     void *context);
+void INTERFLOP_VPREC_API(cast_double_to_float)(double a, float *b,
+                                               void *context);
+void INTERFLOP_VPREC_API(madd_float)(float a, float b, float c, float *res,
+                                     void *context);
+void INTERFLOP_VPREC_API(madd_double)(double a, double b, double c, double *res,
+                                      void *context);
+void INTERFLOP_VPREC_API(enter_function)(interflop_function_stack_t *stack,
+                                         void *context, int nb_args,
+                                         va_list ap);
+void INTERFLOP_VPREC_API(exit_function)(interflop_function_stack_t *stack,
+                                        void *context, int nb_args, va_list ap);
 
-void INTERFLOP_API(user_call)(void *context, interflop_call_id id, va_list ap);
-void INTERFLOP_API(finalize)(void *context);
+void INTERFLOP_VPREC_API(user_call)(void *context, interflop_call_id id,
+                                    va_list ap);
+void INTERFLOP_VPREC_API(finalize)(void *context);
 
 #endif /* __INTERFLOP_VPREC_H__ */

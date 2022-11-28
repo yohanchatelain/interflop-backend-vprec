@@ -20,7 +20,7 @@
 
 #define __VFC_HASHMAP_HEADER__
 
-#include "interflop_stdlib.h"
+#include "../interflop-stdlib/interflop_stdlib.h"
 
 struct vfc_hashmap_st {
   ISize_t nbits;

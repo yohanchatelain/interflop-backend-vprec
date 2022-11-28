@@ -15,7 +15,8 @@
  *   limitations under the License.
  */
 
-#include "interflop_stdlib.h"
+#include "../interflop-stdlib/interflop_stdlib.h"
+
 // #include <stdlib.h>
 
 #define HASH_MULTIPLIER 31

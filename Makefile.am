@@ -11,9 +11,13 @@ if WALL_CFLAGS
 libinterflop_vprec_la_CFLAGS += -Wall -Wextra -Wno-varargs -g  
 endif
 libinterflop_vprec_la_LIBADD = \
-    common/libinterflop_stdlib.la \
     common/libvprec_tools.la \
     common/libvfc_hashmap.la \
     common/libinterflop_fma.la 
+if INTERFLOP_STDLIB
+libinterflop_vprec_la_LIBADD += libinterflop_stdlib.a 
+endif
+libinterflop_vprec_la_includedir =$(includedir)/
+libinterflop_vprec_la_HEADER = interflop_stdlib.h
+    
 
-library_includedir =$(includedir)/

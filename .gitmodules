@@ -1,0 +1,3 @@
+[submodule "interflop-stdlib"]
+	path = interflop-stdlib
+	url = https://github.com/yohanchatelain/interflop-stdlib

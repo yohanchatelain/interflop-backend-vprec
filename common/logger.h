@@ -20,7 +20,7 @@
 #ifndef __LOGGER_H__
 #define __LOGGER_H__
 
-#include "interflop_stdlib.h"
+#include "../interflop-stdlib/interflop_stdlib.h"
 #include <stdarg.h>
 
 /* Display the info message */

@@ -78,8 +78,6 @@ typedef struct interflop_function_stack {
 } interflop_function_stack_t;
 
 struct interflop_backend_interface_t {
-  const char *(*backend_name)(void);
-  const char *(*backend_version)(void);
 
   void (*interflop_add_float)(float a, float b, float *c, void *context);
   void (*interflop_sub_float)(float a, float b, float *c, void *context);

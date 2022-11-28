@@ -20,12 +20,11 @@
 
 #include <argp.h>
 #include <math.h>
-// #include <limits.h>
 
 #include "common/interflop.h"
-#include "common/interflop_stdlib.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
+#include "interflop-stdlib/interflop_stdlib.h"
 #include "interflop_vprec.h"
 #include "interflop_vprec_function_instrumentation.h"
 
@@ -51,18 +50,18 @@ static const char key_log_file_str[] = "prec-log-file";
 /* Setter functions for variables */
 
 void _set_vprec_input_file(const char *input_file, void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   ctx->vfi->vprec_input_file = input_file;
 }
 
 void _set_vprec_output_file(const char *output_file, void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   ctx->vfi->vprec_output_file = output_file;
 }
 
 void _set_vprec_log_file(const char *log_file, void *context) {
 
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   int error = 0;
   ctx->vfi->vprec_log_file = interflop_fopen(log_file, "w", &error);
   if (ctx->vfi->vprec_log_file == NULL) {
@@ -71,7 +70,7 @@ void _set_vprec_log_file(const char *log_file, void *context) {
 }
 
 void _set_vprec_inst_mode(vprec_inst_mode mode, void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   if (mode >= _vprecinst_end_) {
     logger_error("invalid instrumentation mode provided, must be one of:"
                  "{arguments, operations, all, none}.");
@@ -82,7 +81,7 @@ void _set_vprec_inst_mode(vprec_inst_mode mode, void *context) {
 
 /* Argument parser functions */
 
-void _parse_key_instrument(char *arg, t_context *ctx) {
+void _parse_key_instrument(char *arg, vprec_context_t *ctx) {
   /* instrumentation mode */
   if (interflop_strcasecmp(VPREC_INST_MODE_STR[vprecinst_arg], arg) == 0) {
     _set_vprec_inst_mode(vprecinst_arg, ctx);
@@ -103,7 +102,7 @@ void _parse_key_instrument(char *arg, t_context *ctx) {
 }
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
-  t_context *ctx = (t_context *)state->input;
+  vprec_context_t *ctx = (vprec_context_t *)state->input;
   switch (key) {
   case KEY_INPUT_FILE:
     /* input file */
@@ -142,7 +141,7 @@ static struct argp_option options[] = {
 struct argp vfi_argp = {options, parse_opt, "", "", NULL, NULL, NULL};
 
 void _vfi_print_information_header(void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   logger_info("\t%s = %s\n", key_instrument_str,
               VPREC_INST_MODE_STR[ctx->vfi->vprec_inst_mode]);
   logger_info("\t%s = %s\n", key_input_file_str, ctx->vfi->vprec_input_file);
@@ -153,7 +152,7 @@ void _vfi_print_information_header(void *context) {
 /* Core functions */
 
 // Write the hashmap in the given file
-void _vfi_write_hasmap(FILE *fout, t_context *ctx) {
+void _vfi_write_hasmap(FILE *fout, vprec_context_t *ctx) {
   for (size_t ii = 0; ii < ctx->vfi->map->capacity; ii++) {
     if (get_value_at(ctx->vfi->map->items, ii) != 0 &&
         get_value_at(ctx->vfi->map->items, ii) != 0) {
@@ -282,7 +281,7 @@ int _vfi_scan_output(FILE *fi, _vfi_t *function_ptr, int arg_pos) {
 }
 
 // Read and initialize the hashmap from the given file
-void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
+void _vfi_read_hasmap(FILE *fin, vprec_context_t *ctx) {
   _vfi_t function;
 
   while (_vfi_scan_header(fin, &function) == 12) {
@@ -329,13 +328,13 @@ void _vfi_read_hasmap(FILE *fin, t_context *ctx) {
 
 /* allocate the context */
 void _vfi_alloc_context(void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   ctx->vfi = (t_context_vfi *)interflop_malloc(sizeof(t_context_vfi));
 }
 
 /* initialize the context */
 void _vfi_init_context(void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   ctx->vfi->map = NULL;
   ctx->vfi->vprec_input_file = NULL;
   ctx->vfi->vprec_output_file = NULL;
@@ -346,7 +345,7 @@ void _vfi_init_context(void *context) {
 
 /* initialize the variables to run vprec function instrumentation */
 void _vfi_init(void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
   /* Initialize the vprec_function_map */
 
   ctx->vfi->map = vfc_hashmap_create();
@@ -365,7 +364,7 @@ void _vfi_init(void *context) {
 
 /* free objects and close files */
 void _vfi_finalize(void *context) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
 
   /* save the hashmap */
   if (ctx->vfi->vprec_output_file != NULL) {
@@ -397,7 +396,7 @@ void _vfi_finalize(void *context) {
 // function call
 void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
                          int nb_args, va_list ap) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
 
   interflop_function_info_t *function_info = stack->array[stack->top];
 
@@ -632,7 +631,7 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 // function call
 void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
                         int nb_args, va_list ap) {
-  t_context *ctx = (t_context *)context;
+  vprec_context_t *ctx = (vprec_context_t *)context;
 
   interflop_function_info_t *function_info = stack->array[stack->top];
 

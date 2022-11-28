@@ -21,9 +21,9 @@
 #ifndef __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 #define __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 
-// #include <stdio.h>
+#include "interflop-stdlib/interflop_stdlib.h"
+
 #include "common/interflop.h"
-#include "common/interflop_stdlib.h"
 #include "common/vfc_hashmap.h"
 
 /* define instrumentation modes */

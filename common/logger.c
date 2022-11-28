@@ -30,7 +30,7 @@
 // #include <sys/types.h>
 // #include <unistd.h>
 
-#include "interflop_stdlib.h"
+#include "../interflop-stdlib/interflop_stdlib.h"
 
 #define str(X) #X
 #define xstr(X) str(X)
