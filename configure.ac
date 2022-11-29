@@ -18,24 +18,7 @@ if test "x$WALL_CFLAGS" = "xyes"; then
    AC_MSG_NOTICE([-Wall is set])
 fi
 
-AC_ARG_WITH([interflop-stdlib],
-  AS_HELP_STRING([--with-interflop-stdlib@<:@=DIR@:>@],
-    [use interflop-stdlib located in DIR]),
-  [with_interflop_stdlib="$withval"],
-  [with_interflop_stdlib=yes])
-AM_CONDITIONAL([BUILD_INTERFLOP_STDLIB], [test "x$with_interflop_stdlib" != "xno"])
-
-if test "x$with_interflop_stdlib" = "xno"; then
-   AC_MSG_NOTICE([--with-interflop-stdlib=no was given. Disabling interflop-stdlib linkage.])
-else
-
-   if test "x$with_interflop_stdlib" = "xyes"; then
-      with_interflop_stdlib_path=$PWD/interflop-stdlib/install/
-   else
-      with_interflop_stdlib_path="$with_interflop_stdlib"
-   fi
-   AC_DEFINE([BUILD_INTERFLOP_STDLIB], [],  ["Link with interflop stdlib"])
-fi
+AX_INTERFLOP_STDLIB()
 
 AC_CONFIG_FILES([
  Makefile

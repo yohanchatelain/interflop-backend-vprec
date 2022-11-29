@@ -15,7 +15,7 @@ libinterflop_vprec_la_LIBADD = \
     common/libvfc_hashmap.la \
     common/libinterflop_fma.la 
 if BUILD_INTERFLOP_STDLIB
-libinterflop_vprec_la_LIBADD += libinterflop_stdlib.la
+libinterflop_vprec_la_LIBADD += @INTERFLOP_STDLIB_PATH@/libinterflop_stdlib.la
 endif
 libinterflop_vprec_la_includedir =$(includedir)/
 libinterflop_vprec_la_HEADER = interflop.h interflop_stdlib.h
