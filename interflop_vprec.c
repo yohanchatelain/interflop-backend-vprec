@@ -38,14 +38,14 @@
 
 #include "interflop-stdlib/interflop_stdlib.h"
 
-#include "common/float_const.h"
-#include "common/float_struct.h"
-#include "common/float_utils.h"
-#include "common/fmaqApprox.h"
-#include "common/logger.h"
 #include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
+#include "interflop-stdlib/common/float_const.h"
+#include "interflop-stdlib/common/float_struct.h"
+#include "interflop-stdlib/common/float_utils.h"
+#include "interflop-stdlib/fma/fmaqApprox.h"
 #include "interflop-stdlib/interflop.h"
+#include "interflop-stdlib/iostream/logger.h"
 #include "interflop_vprec.h"
 #include "interflop_vprec_function_instrumentation.h"
 

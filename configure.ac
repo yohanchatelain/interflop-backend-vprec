@@ -23,6 +23,5 @@ AX_INTERFLOP_STDLIB()
 AC_CONFIG_FILES([
  Makefile
  common/Makefile
- common/rng/Makefile
 ])
 AC_OUTPUT

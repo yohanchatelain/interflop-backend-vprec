@@ -21,14 +21,9 @@
 #ifndef __INTERFLOP_VPREC_H__
 #define __INTERFLOP_VPREC_H__
 
-// #include <math.h>
-// #include <stdbool.h>
-// #include <string.h>
-// #include <strings.h>
-
-#include "common/float_const.h"
-#include "common/logger.h"
 #include "common/vprec_tools.h"
+#include "interflop-stdlib/common/float_const.h"
+#include "interflop-stdlib/iostream/logger.h"
 #include "interflop_vprec_function_instrumentation.h"
 
 #define INTERFLOP_VPREC_API(name) interflop_vprec_##name
