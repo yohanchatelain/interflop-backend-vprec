@@ -21,10 +21,9 @@
 #ifndef __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 #define __INTERFLOP_VPREC_FUNCTION_INSTRUMENTATION_H__
 
-#include "interflop-stdlib/interflop_stdlib.h"
-
-#include "common/vfc_hashmap.h"
+#include "interflop-stdlib/hashmap/vfc_hashmap.h"
 #include "interflop-stdlib/interflop.h"
+#include "interflop-stdlib/interflop_stdlib.h"
 
 /* define instrumentation modes */
 typedef enum {

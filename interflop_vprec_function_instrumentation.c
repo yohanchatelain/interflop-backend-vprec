@@ -21,8 +21,8 @@
 #include <argp.h>
 #include <math.h>
 
-#include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
+#include "interflop-stdlib/hashmap/vfc_hashmap.h"
 #include "interflop-stdlib/interflop.h"
 #include "interflop-stdlib/interflop_stdlib.h"
 #include "interflop_vprec.h"

@@ -38,12 +38,12 @@
 
 #include "interflop-stdlib/interflop_stdlib.h"
 
-#include "common/vfc_hashmap.h"
 #include "common/vprec_tools.h"
 #include "interflop-stdlib/common/float_const.h"
 #include "interflop-stdlib/common/float_struct.h"
 #include "interflop-stdlib/common/float_utils.h"
 #include "interflop-stdlib/fma/fmaqApprox.h"
+#include "interflop-stdlib/hashmap/vfc_hashmap.h"
 #include "interflop-stdlib/interflop.h"
 #include "interflop-stdlib/iostream/logger.h"
 #include "interflop_vprec.h"
@@ -702,13 +702,13 @@ void INTERFLOP_VPREC_API(cast_double_to_float)(double a, float *b,
                              ctx->binary32_range);
 }
 
-void INTERFLOP_VPREC_API(madd_float)(float a, float b, float c, float *res,
-                                     void *context) {
+void INTERFLOP_VPREC_API(fma_float)(float a, float b, float c, float *res,
+                                    void *context) {
   *res = _vprec_binary32_ternary_op(a, b, c, vprec_fma, context);
 }
 
-void INTERFLOP_VPREC_API(madd_double)(double a, double b, double c, double *res,
-                                      void *context) {
+void INTERFLOP_VPREC_API(fma_double)(double a, double b, double c, double *res,
+                                     void *context) {
   *res = _vprec_binary64_ternary_op(a, b, c, vprec_fma, context);
 }
 
@@ -1076,8 +1076,8 @@ struct interflop_backend_interface_t INTERFLOP_VPREC_API(init)(void *context) {
     interflop_div_double : INTERFLOP_VPREC_API(div_double),
     interflop_cmp_double : NULL,
     interflop_cast_double_to_float : INTERFLOP_VPREC_API(cast_double_to_float),
-    interflop_madd_float : INTERFLOP_VPREC_API(madd_float),
-    interflop_madd_double : INTERFLOP_VPREC_API(madd_double),
+    interflop_fma_float : INTERFLOP_VPREC_API(madd_float),
+    interflop_fma_double : INTERFLOP_VPREC_API(madd_double),
     interflop_enter_function : INTERFLOP_VPREC_API(enter_function),
     interflop_exit_function : INTERFLOP_VPREC_API(exit_function),
     interflop_user_call : INTERFLOP_VPREC_API(user_call),

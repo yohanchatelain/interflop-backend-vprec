@@ -12,8 +12,8 @@ libinterflop_vprec_la_CFLAGS += -Wall -Wextra -Wno-varargs
 endif
 libinterflop_vprec_la_LIBADD = \
     common/libvprec_tools.la \
-    common/libvfc_hashmap.la \
-    @INTERFLOP_STDLIB_PATH@/lib/libinterflop_fma.la
+    @INTERFLOP_STDLIB_PATH@/lib/libinterflop_fma.la \
+    @INTERFLOP_STDLIB_PATH@/lib/libinterflop_hashmap.la 
 if BUILD_INTERFLOP_STDLIB
 libinterflop_vprec_la_LIBADD += @INTERFLOP_STDLIB_PATH@/lib/libinterflop_stdlib.la
 endif
