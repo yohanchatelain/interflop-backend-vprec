@@ -14,7 +14,7 @@ libinterflop_vprec_la_LIBADD = \
     common/libvprec_tools.la \
     @INTERFLOP_STDLIB_PATH@/lib/libinterflop_fma.la \
     @INTERFLOP_STDLIB_PATH@/lib/libinterflop_hashmap.la 
-if BUILD_INTERFLOP_STDLIB
+if LINK_INTERFLOP_STDLIB
 libinterflop_vprec_la_LIBADD += @INTERFLOP_STDLIB_PATH@/lib/libinterflop_stdlib.la
 endif
 libinterflop_vprec_la_includedir =$(includedir)/
