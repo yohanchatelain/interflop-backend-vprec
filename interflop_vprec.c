@@ -956,7 +956,7 @@ void _vprec_alloc_context(void **context) {
 }
 
 /* intialize the context */
-void init_context(vprec_context_t *ctx) {
+static void init_context(vprec_context_t *ctx) {
   ctx->binary32_precision = VPREC_PRECISION_BINARY32_DEFAULT;
   ctx->binary32_range = VPREC_RANGE_BINARY32_DEFAULT;
   ctx->binary64_precision = VPREC_PRECISION_BINARY64_DEFAULT;
@@ -1076,8 +1076,8 @@ struct interflop_backend_interface_t INTERFLOP_VPREC_API(init)(void *context) {
     interflop_div_double : INTERFLOP_VPREC_API(div_double),
     interflop_cmp_double : NULL,
     interflop_cast_double_to_float : INTERFLOP_VPREC_API(cast_double_to_float),
-    interflop_fma_float : INTERFLOP_VPREC_API(madd_float),
-    interflop_fma_double : INTERFLOP_VPREC_API(madd_double),
+    interflop_fma_float : INTERFLOP_VPREC_API(fma_float),
+    interflop_fma_double : INTERFLOP_VPREC_API(fma_double),
     interflop_enter_function : INTERFLOP_VPREC_API(enter_function),
     interflop_exit_function : INTERFLOP_VPREC_API(exit_function),
     interflop_user_call : INTERFLOP_VPREC_API(user_call),
