@@ -970,7 +970,7 @@ void init_context(vprec_context_t *ctx) {
   _vfi_init_context(ctx);
 }
 
-void print_information_header(void *context) {
+static void print_information_header(void *context) {
   /* Environnement variable to disable loading message */
   char *silent_load_env = interflop_getenv("VFC_BACKENDS_SILENT_LOAD");
   bool silent_load = ((silent_load_env == NULL) ||
@@ -983,17 +983,17 @@ void print_information_header(void *context) {
 
   vprec_context_t *ctx = (vprec_context_t *)context;
 
-  logger_info("load backend with: \n");
-  logger_info("\t%s = %d\n", key_prec_b32_str, ctx->binary32_precision);
-  logger_info("\t%s = %d\n", key_range_b32_str, ctx->binary32_range);
-  logger_info("\t%s = %d\n", key_prec_b64_str, ctx->binary64_precision);
-  logger_info("\t%s = %d\n", key_range_b64_str, ctx->binary64_range);
-  logger_info("\t%s = %s\n", key_mode_str, VPREC_MODE_STR[ctx->mode]);
-  logger_info("\t%s = %s\n", key_err_mode_str, _get_error_mode_str(ctx));
-  if (ctx->absErr)
-    logger_info("\t%s = %d\n", key_err_exp_str, ctx->absErr_exp);
-  logger_info("\t%s = %s\n", key_daz_str, ctx->daz ? "true" : "false");
-  logger_info("\t%s = %s\n", key_ftz_str, ctx->ftz ? "true" : "false");
+  logger_info("load backend with: ");
+  logger_info("%s = %d,", key_prec_b32_str, ctx->binary32_precision);
+  logger_info("%s = %d,", key_range_b32_str, ctx->binary32_range);
+  logger_info("%s = %d,", key_prec_b64_str, ctx->binary64_precision);
+  logger_info("%s = %d,", key_range_b64_str, ctx->binary64_range);
+  logger_info("%s = %s,", key_mode_str, VPREC_MODE_STR[ctx->mode]);
+  logger_info("%s = %s,", key_err_mode_str, _get_error_mode_str(ctx));
+  logger_info("%s = %d,", key_err_exp_str, ctx->absErr_exp);
+  logger_info("%s = %s and ", key_daz_str, ctx->daz ? "true" : "false");
+  logger_info("%s = %s", key_ftz_str, ctx->ftz ? "true" : "false");
+  logger_info("\n");
   _vfi_print_information_header(context);
 }
 

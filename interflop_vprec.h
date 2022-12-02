@@ -49,6 +49,9 @@
 /* default mode value  */
 #define VPREC_MODE_DEFAULT vprecmode_ob
 
+/* default error mode value */
+#define VPREC_ERR_MODE_DEFAULT vprec_err_mode_rel
+
 typedef enum {
   KEY_PREC_B32,
   KEY_PREC_B64,
