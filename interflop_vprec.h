@@ -197,9 +197,9 @@ void INTERFLOP_VPREC_API(div_double)(double a, double b, double *c,
                                      void *context);
 void INTERFLOP_VPREC_API(cast_double_to_float)(double a, float *b,
                                                void *context);
-void INTERFLOP_VPREC_API(madd_float)(float a, float b, float c, float *res,
+void INTERFLOP_VPREC_API(fma_float)(float a, float b, float c, float *res,
                                      void *context);
-void INTERFLOP_VPREC_API(madd_double)(double a, double b, double c, double *res,
+void INTERFLOP_VPREC_API(fma_double)(double a, double b, double c, double *res,
                                       void *context);
 void INTERFLOP_VPREC_API(enter_function)(interflop_function_stack_t *stack,
                                          void *context, int nb_args,
