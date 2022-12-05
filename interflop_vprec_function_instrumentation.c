@@ -19,7 +19,6 @@
  ****************************************************************************/
 
 #include <argp.h>
-#include <math.h>
 
 #include "common/vprec_tools.h"
 #include "interflop-stdlib/hashmap/vfc_hashmap.h"
@@ -47,6 +46,27 @@ static const char key_input_file_str[] = "prec-input-file";
 static const char key_output_file_str[] = "prec-output-file";
 static const char key_log_file_str[] = "prec-log-file";
 
+#define STRING_BUFF 256
+
+#define INIT_STRING(A, N)                                                      \
+  for (int i = 0; i < N; i++)                                                  \
+    A[i] = (char *)interflop_malloc(sizeof(char) * STRING_BUFF);
+
+#define FREE_STRING(A, N)                                                      \
+  for (int i = 0; i < N; i++)                                                  \
+    if (A[i])                                                                  \
+      interflop_free(A[i]);
+
+const int elt_to_read_header = 12;
+const int elt_to_read_inputs = 7;
+const int elt_to_read_outputs = 7;
+
+char *tokens_header[12];
+char *tokens_inputs[7];
+char *tokens_outputs[7];
+
+static File *_vprec_log_file = Null;
+
 /* Setter functions for variables */
 
 void _set_vprec_input_file(const char *input_file, void *context) {
@@ -60,13 +80,8 @@ void _set_vprec_output_file(const char *output_file, void *context) {
 }
 
 void _set_vprec_log_file(const char *log_file, void *context) {
-
   vprec_context_t *ctx = (vprec_context_t *)context;
-  int error = 0;
-  ctx->vfi->vprec_log_file = interflop_fopen(log_file, "w", &error);
-  if (ctx->vfi->vprec_log_file == NULL) {
-    logger_error("Log file can't be written: %s", interflop_strerror(error));
-  }
+  ctx->vfi->vprec_log_file = log_file;
 }
 
 void _set_vprec_inst_mode(vprec_inst_mode mode, void *context) {
@@ -202,16 +217,14 @@ long _vfi_scan_int(char *token, const char *field) {
 }
 
 int _vfi_scan_line(FILE *fi, char **tokens) {
-
   const int line_max_size = 2048;
-  char line[line_max_size];
+  char line[2048];
   interflop_fgets(line, line_max_size, fi);
-
   char *tabptr;
   char *token = interflop_strtok_r(line, "\t", &tabptr);
   int nb_token = 0;
   while (token) {
-    tokens[nb_token] = token;
+    interflop_strcpy(tokens[nb_token], token);
     nb_token++;
     token = interflop_strtok_r(NULL, "\t", &tabptr);
   }
@@ -219,63 +232,61 @@ int _vfi_scan_line(FILE *fi, char **tokens) {
 }
 
 int _vfi_scan_header(FILE *fi, _vfi_t *function_ptr) {
-  const int elt_to_read = 12;
-  char *tokens[elt_to_read];
-  int nb_token = _vfi_scan_line(fi, tokens);
-  if (nb_token != elt_to_read) {
+  int nb_token = _vfi_scan_line(fi, tokens_header);
+  if (nb_token != elt_to_read_header) {
     return nb_token;
   }
 
-  interflop_strcpy(function_ptr->id, tokens[0]);
+  interflop_strcpy(function_ptr->id, tokens_header[0]);
   function_ptr->isLibraryFunction =
-      _vfi_scan_int(tokens[1], "isLibraryFunction");
+      _vfi_scan_int(tokens_header[1], "isLibraryFunction");
   function_ptr->isIntrinsicFunction =
-      _vfi_scan_int(tokens[2], "isIntrinsicFunction");
-  function_ptr->useFloat = _vfi_scan_int(tokens[3], "useFloat");
-  function_ptr->useDouble = _vfi_scan_int(tokens[4], "useDouble");
-  function_ptr->OpsPrec64 = _vfi_scan_int(tokens[5], "OpsPrec64");
-  function_ptr->OpsRange64 = _vfi_scan_int(tokens[6], "OpsRange64");
-  function_ptr->OpsPrec32 = _vfi_scan_int(tokens[7], "OpsPrec32");
-  function_ptr->OpsRange32 = _vfi_scan_int(tokens[8], "OpsRange32");
-  function_ptr->nb_input_args = _vfi_scan_int(tokens[9], "nb_input_args");
-  function_ptr->nb_output_args = _vfi_scan_int(tokens[10], "nb_output_args");
-  function_ptr->n_calls = _vfi_scan_int(tokens[11], "n_calls");
+      _vfi_scan_int(tokens_header[2], "isIntrinsicFunction");
+  function_ptr->useFloat = _vfi_scan_int(tokens_header[3], "useFloat");
+  function_ptr->useDouble = _vfi_scan_int(tokens_header[4], "useDouble");
+  function_ptr->OpsPrec64 = _vfi_scan_int(tokens_header[5], "OpsPrec64");
+  function_ptr->OpsRange64 = _vfi_scan_int(tokens_header[6], "OpsRange64");
+  function_ptr->OpsPrec32 = _vfi_scan_int(tokens_header[7], "OpsPrec32");
+  function_ptr->OpsRange32 = _vfi_scan_int(tokens_header[8], "OpsRange32");
+  function_ptr->nb_input_args =
+      _vfi_scan_int(tokens_header[9], "nb_input_args");
+  function_ptr->nb_output_args =
+      _vfi_scan_int(tokens_header[10], "nb_output_args");
+  function_ptr->n_calls = _vfi_scan_int(tokens_header[11], "n_calls");
 
   return nb_token;
 }
 
 int _vfi_scan_input(FILE *fi, _vfi_t *function_ptr, int arg_pos) {
-  const int elt_to_read = 7;
-  char *tokens[elt_to_read];
-  int nb_token = _vfi_scan_line(fi, tokens);
-
+  int nb_token = _vfi_scan_line(fi, tokens_inputs);
   _vfi_argument_data_t *arg_data = &function_ptr->input_args[arg_pos];
 
   // tokens[0] == "input:"
-  interflop_strcpy(arg_data->arg_id, tokens[1]);
-  arg_data->data_type = _vfi_scan_int(tokens[2], "data_type");
-  arg_data->mantissa_length = _vfi_scan_int(tokens[3], "mantissa_length");
-  arg_data->exponent_length = _vfi_scan_int(tokens[4], "exponent_length");
-  arg_data->min_range = _vfi_scan_int(tokens[5], "min_range");
-  arg_data->max_range = _vfi_scan_int(tokens[6], "max_range");
+  interflop_strcpy(arg_data->arg_id, tokens_inputs[1]);
+  arg_data->data_type = _vfi_scan_int(tokens_inputs[2], "data_type");
+  arg_data->mantissa_length =
+      _vfi_scan_int(tokens_inputs[3], "mantissa_length");
+  arg_data->exponent_length =
+      _vfi_scan_int(tokens_inputs[4], "exponent_length");
+  arg_data->min_range = _vfi_scan_int(tokens_inputs[5], "min_range");
+  arg_data->max_range = _vfi_scan_int(tokens_inputs[6], "max_range");
 
   return nb_token;
 }
 
 int _vfi_scan_output(FILE *fi, _vfi_t *function_ptr, int arg_pos) {
-  const int elt_to_read = 7;
-  char *tokens[elt_to_read];
-  int nb_token = _vfi_scan_line(fi, tokens);
-
+  int nb_token = _vfi_scan_line(fi, tokens_outputs);
   _vfi_argument_data_t *arg_data = &function_ptr->output_args[arg_pos];
 
   // tokens[0] == "output:"
-  interflop_strcpy(arg_data->arg_id, tokens[1]);
-  arg_data->data_type = _vfi_scan_int(tokens[2], "data_type");
-  arg_data->mantissa_length = _vfi_scan_int(tokens[3], "mantissa_length");
-  arg_data->exponent_length = _vfi_scan_int(tokens[4], "exponent_length");
-  arg_data->min_range = _vfi_scan_int(tokens[5], "min_range");
-  arg_data->max_range = _vfi_scan_int(tokens[6], "max_range");
+  interflop_strcpy(arg_data->arg_id, tokens_outputs[1]);
+  arg_data->data_type = _vfi_scan_int(tokens_outputs[2], "data_type");
+  arg_data->mantissa_length =
+      _vfi_scan_int(tokens_outputs[3], "mantissa_length");
+  arg_data->exponent_length =
+      _vfi_scan_int(tokens_outputs[4], "exponent_length");
+  arg_data->min_range = _vfi_scan_int(tokens_outputs[5], "min_range");
+  arg_data->max_range = _vfi_scan_int(tokens_outputs[6], "max_range");
 
   return nb_token;
 }
@@ -318,11 +329,11 @@ void _vfi_read_hasmap(FILE *fin, vprec_context_t *ctx) {
 // Print str in vprec_log_file with the correct offset
 #define _vfi_print_log(ctx, _vprec_str, ...)                                   \
   ({                                                                           \
-    if (ctx->vfi->vprec_log_file != NULL) {                                    \
+    if (_vprec_log_file != NULL) {                                             \
       for (size_t _vprec_d = 0; _vprec_d < ctx->vfi->vprec_log_depth;          \
            _vprec_d++)                                                         \
-        interflop_fprintf(ctx->vfi->vprec_log_file, "\t");                     \
-      interflop_fprintf(ctx->vfi->vprec_log_file, _vprec_str, ##__VA_ARGS__);  \
+        interflop_fprintf(_vprec_log_file, "\t");                              \
+      interflop_fprintf(_vprec_log_file, _vprec_str, ##__VA_ARGS__);           \
     }                                                                          \
   })
 
@@ -345,6 +356,10 @@ void _vfi_init_context(void *context) {
 
 /* initialize the variables to run vprec function instrumentation */
 void _vfi_init(void *context) {
+  INIT_STRING(tokens_header, elt_to_read_header);
+  INIT_STRING(tokens_inputs, elt_to_read_inputs);
+  INIT_STRING(tokens_outputs, elt_to_read_outputs);
+
   vprec_context_t *ctx = (vprec_context_t *)context;
   /* Initialize the vprec_function_map */
 
@@ -358,6 +373,17 @@ void _vfi_init(void *context) {
       interflop_fclose(f);
     } else {
       logger_error("Input file can't be found: %s", interflop_strerror(error));
+    }
+  }
+
+  if (ctx->vfi->vprec_log_file != NULL) {
+    int error = 0;
+    File *f = interflop_fopen(ctx->vfi->vprec_log_file, "w", &error);
+    if (f != NULL) {
+      _vprec_log_file = f;
+    } else {
+      logger_error("Error while opening %s: %s", ctx->vfi->vprec_log_file,
+                   interflop_strerror(error));
     }
   }
 }
@@ -380,8 +406,8 @@ void _vfi_finalize(void *context) {
   }
 
   /* close log file */
-  if (ctx->vfi->vprec_log_file != NULL) {
-    interflop_fclose(ctx->vfi->vprec_log_file);
+  if (_vprec_log_file != NULL) {
+    interflop_fclose(_vprec_log_file);
   }
 
   /* free vprec_function_map */
@@ -389,6 +415,10 @@ void _vfi_finalize(void *context) {
 
   /* destroy vprec_function_map */
   vfc_hashmap_destroy(ctx->vfi->map);
+
+  FREE_STRING(tokens_header, elt_to_read_header);
+  FREE_STRING(tokens_inputs, elt_to_read_inputs);
+  FREE_STRING(tokens_outputs, elt_to_read_outputs);
 }
 
 // vprec function instrumentation
@@ -505,12 +535,14 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
       if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->input_args[i].min_range =
-            (floor(*value) < function_inst->input_args[i].min_range || new_flag)
-                ? floor(*value)
+            (interflop_floor(*value) < function_inst->input_args[i].min_range ||
+             new_flag)
+                ? interflop_floor(*value)
                 : function_inst->input_args[i].min_range;
         function_inst->input_args[i].max_range =
-            (ceil(*value) > function_inst->input_args[i].max_range || new_flag)
-                ? ceil(*value)
+            (interflop_ceil(*value) > function_inst->input_args[i].max_range ||
+             new_flag)
+                ? interflop_ceil(*value)
                 : function_inst->input_args[i].max_range;
       }
 
@@ -532,12 +564,14 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
       if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->input_args[i].min_range =
-            (floor(*value) < function_inst->input_args[i].min_range || new_flag)
-                ? floor(*value)
+            (interflop_floor(*value) < function_inst->input_args[i].min_range ||
+             new_flag)
+                ? interflop_floor(*value)
                 : function_inst->input_args[i].min_range;
         function_inst->input_args[i].max_range =
-            (ceil(*value) > function_inst->input_args[i].max_range || new_flag)
-                ? ceil(*value)
+            (interflop_ceil(*value) > function_inst->input_args[i].max_range ||
+             new_flag)
+                ? interflop_ceil(*value)
                 : function_inst->input_args[i].max_range;
       }
 
@@ -567,14 +601,16 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
         if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->input_args[i].min_range =
-              (floor(*value) < function_inst->input_args[i].min_range ||
+              (interflop_floor(*value) <
+                   function_inst->input_args[i].min_range ||
                new_flag)
-                  ? floor(*value)
+                  ? interflop_floor(*value)
                   : function_inst->input_args[i].min_range;
           function_inst->input_args[i].max_range =
-              (ceil(*value) > function_inst->input_args[i].max_range ||
+              (interflop_ceil(*value) >
+                   function_inst->input_args[i].max_range ||
                new_flag)
-                  ? ceil(*value)
+                  ? interflop_ceil(*value)
                   : function_inst->input_args[i].max_range;
         }
 
@@ -604,14 +640,16 @@ void _vfi_enter_function(interflop_function_stack_t *stack, void *context,
 
         if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->input_args[i].min_range =
-              (floor(*value) < function_inst->input_args[i].min_range ||
+              (interflop_floor(*value) <
+                   function_inst->input_args[i].min_range ||
                new_flag)
-                  ? floor(*value)
+                  ? interflop_floor(*value)
                   : function_inst->input_args[i].min_range;
           function_inst->input_args[i].max_range =
-              (ceil(*value) > function_inst->input_args[i].max_range ||
+              (interflop_ceil(*value) >
+                   function_inst->input_args[i].max_range ||
                new_flag)
-                  ? ceil(*value)
+                  ? interflop_ceil(*value)
                   : function_inst->input_args[i].max_range;
         }
 
@@ -722,13 +760,15 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
 
       if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->output_args[i].min_range =
-            (floor(*value) < function_inst->output_args[i].min_range ||
+            (interflop_floor(*value) <
+                 function_inst->output_args[i].min_range ||
              new_flag)
-                ? floor(*value)
+                ? interflop_floor(*value)
                 : function_inst->output_args[i].min_range;
         function_inst->output_args[i].max_range =
-            (ceil(*value) > function_inst->output_args[i].max_range || new_flag)
-                ? ceil(*value)
+            (interflop_ceil(*value) > function_inst->output_args[i].max_range ||
+             new_flag)
+                ? interflop_ceil(*value)
                 : function_inst->output_args[i].max_range;
       }
 
@@ -749,13 +789,15 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
 
       if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
         function_inst->output_args[i].min_range =
-            (floor(*value) < function_inst->output_args[i].min_range ||
+            (interflop_floor(*value) <
+                 function_inst->output_args[i].min_range ||
              new_flag)
-                ? floor(*value)
+                ? interflop_floor(*value)
                 : function_inst->output_args[i].min_range;
         function_inst->output_args[i].max_range =
-            (ceil(*value) > function_inst->output_args[i].max_range || new_flag)
-                ? ceil(*value)
+            (interflop_ceil(*value) > function_inst->output_args[i].max_range ||
+             new_flag)
+                ? interflop_ceil(*value)
                 : function_inst->output_args[i].max_range;
       }
 
@@ -784,14 +826,16 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
 
         if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->output_args[i].min_range =
-              (floor(*value) < function_inst->output_args[i].min_range ||
+              (interflop_floor(*value) <
+                   function_inst->output_args[i].min_range ||
                new_flag)
-                  ? floor(*value)
+                  ? interflop_floor(*value)
                   : function_inst->output_args[i].min_range;
           function_inst->output_args[i].max_range =
-              (ceil(*value) > function_inst->output_args[i].max_range ||
+              (interflop_ceil(*value) >
+                   function_inst->output_args[i].max_range ||
                new_flag)
-                  ? ceil(*value)
+                  ? interflop_ceil(*value)
                   : function_inst->output_args[i].max_range;
         }
 
@@ -821,14 +865,16 @@ void _vfi_exit_function(interflop_function_stack_t *stack, void *context,
 
         if (!(interflop_isnan(*value) || interflop_isinf(*value))) {
           function_inst->output_args[i].min_range =
-              (floor(*value) < function_inst->output_args[i].min_range ||
+              (interflop_floor(*value) <
+                   function_inst->output_args[i].min_range ||
                new_flag)
-                  ? floor(*value)
+                  ? interflop_floor(*value)
                   : function_inst->output_args[i].min_range;
           function_inst->output_args[i].max_range =
-              (ceil(*value) > function_inst->output_args[i].max_range ||
+              (interflop_ceil(*value) >
+                   function_inst->output_args[i].max_range ||
                new_flag)
-                  ? ceil(*value)
+                  ? interflop_ceil(*value)
                   : function_inst->output_args[i].max_range;
         }
 

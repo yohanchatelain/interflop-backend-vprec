@@ -90,7 +90,7 @@ typedef struct {
   vfc_hashmap_t map;
   const char *vprec_input_file;
   const char *vprec_output_file;
-  File *vprec_log_file;
+  const char *vprec_log_file;
   vprec_inst_mode vprec_inst_mode;
   ISize_t vprec_log_depth;
 } t_context_vfi;

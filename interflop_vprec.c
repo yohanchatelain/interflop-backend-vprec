@@ -102,11 +102,11 @@ void _set_vprec_mode(vprec_mode mode, vprec_context_t *ctx) {
 
 void _set_vprec_precision_binary32(int precision, vprec_context_t *ctx) {
   if (precision < VPREC_PRECISION_BINARY32_MIN) {
-    logger_error("invalid precision provided for binary32."
+    logger_error("invalid precision provided for binary32. "
                  "Must be greater than %d",
                  VPREC_PRECISION_BINARY32_MIN);
   } else if (VPREC_PRECISION_BINARY32_MAX < precision) {
-    logger_error("invalid precision provided for binary32."
+    logger_error("invalid precision provided for binary32. "
                  "Must be lower than %d",
                  VPREC_PRECISION_BINARY32_MAX);
   } else {
@@ -116,11 +116,11 @@ void _set_vprec_precision_binary32(int precision, vprec_context_t *ctx) {
 
 void _set_vprec_range_binary32(int range, vprec_context_t *ctx) {
   if (range < VPREC_RANGE_BINARY32_MIN) {
-    logger_error("invalid range provided for binary32."
+    logger_error("invalid range provided for binary32. "
                  "Must be greater than %d",
                  VPREC_RANGE_BINARY32_MIN);
   } else if (VPREC_RANGE_BINARY32_MAX < range) {
-    logger_error("invalid range provided for binary32."
+    logger_error("invalid range provided for binary32. "
                  "Must be lower than %d",
                  VPREC_RANGE_BINARY32_MAX);
   } else {
@@ -130,11 +130,11 @@ void _set_vprec_range_binary32(int range, vprec_context_t *ctx) {
 
 void _set_vprec_precision_binary64(int precision, vprec_context_t *ctx) {
   if (precision < VPREC_PRECISION_BINARY64_MIN) {
-    logger_error("invalid precision provided for binary64."
+    logger_error("invalid precision provided for binary64 (%d). "
                  "Must be greater than %d",
-                 VPREC_PRECISION_BINARY64_MIN);
+                 precision, VPREC_PRECISION_BINARY64_MIN);
   } else if (VPREC_PRECISION_BINARY64_MAX < precision) {
-    logger_error("invalid precision provided for binary64."
+    logger_error("invalid precision provided for binary64. "
                  "Must be lower than %d",
                  VPREC_PRECISION_BINARY64_MAX);
   } else {
@@ -144,11 +144,11 @@ void _set_vprec_precision_binary64(int precision, vprec_context_t *ctx) {
 
 void _set_vprec_range_binary64(int range, vprec_context_t *ctx) {
   if (range < VPREC_RANGE_BINARY64_MIN) {
-    logger_error("invalid range provided for binary64."
+    logger_error("invalid range provided for binary64. "
                  "Must be greater than %d",
                  VPREC_RANGE_BINARY64_MIN);
   } else if (VPREC_RANGE_BINARY64_MAX < range) {
-    logger_error("invalid range provided for binary64."
+    logger_error("invalid range provided for binary64. "
                  "Must be lower than %d",
                  VPREC_RANGE_BINARY64_MAX);
   } else {
@@ -983,17 +983,16 @@ static void print_information_header(void *context) {
 
   vprec_context_t *ctx = (vprec_context_t *)context;
 
-  logger_info("load backend with: ");
-  logger_info("%s = %d,", key_prec_b32_str, ctx->binary32_precision);
-  logger_info("%s = %d,", key_range_b32_str, ctx->binary32_range);
-  logger_info("%s = %d,", key_prec_b64_str, ctx->binary64_precision);
-  logger_info("%s = %d,", key_range_b64_str, ctx->binary64_range);
-  logger_info("%s = %s,", key_mode_str, VPREC_MODE_STR[ctx->mode]);
-  logger_info("%s = %s,", key_err_mode_str, _get_error_mode_str(ctx));
-  logger_info("%s = %d,", key_err_exp_str, ctx->absErr_exp);
-  logger_info("%s = %s and ", key_daz_str, ctx->daz ? "true" : "false");
-  logger_info("%s = %s", key_ftz_str, ctx->ftz ? "true" : "false");
-  logger_info("\n");
+  logger_info("load backend with: \n");
+  logger_info("\t%s = %d\n", key_prec_b32_str, ctx->binary32_precision);
+  logger_info("\t%s = %d\n", key_range_b32_str, ctx->binary32_range);
+  logger_info("\t%s = %d\n", key_prec_b64_str, ctx->binary64_precision);
+  logger_info("\t%s = %d\n", key_range_b64_str, ctx->binary64_range);
+  logger_info("\t%s = %s\n", key_mode_str, VPREC_MODE_STR[ctx->mode]);
+  logger_info("\t%s = %s\n", key_err_mode_str, _get_error_mode_str(ctx));
+  logger_info("\t%s = %d\n", key_err_exp_str, ctx->absErr_exp);
+  logger_info("\t%s = %s\n", key_daz_str, ctx->daz ? "true" : "false");
+  logger_info("\t%s = %s\n", key_ftz_str, ctx->ftz ? "true" : "false");
   _vfi_print_information_header(context);
 }
 
@@ -1039,7 +1038,7 @@ void INTERFLOP_VPREC_API(pre_init)(File *stream, interflop_panic_t panic,
 
   /* allocate the context */
   _vprec_alloc_context(context);
-  vprec_context_t *ctx = *context;
+  vprec_context_t *ctx = (vprec_context_t *)*context;
   init_context(ctx);
 }
 
