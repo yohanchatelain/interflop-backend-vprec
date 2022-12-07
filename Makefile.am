@@ -17,6 +17,5 @@ libinterflop_vprec_la_LIBADD = \
 if LINK_INTERFLOP_STDLIB
 libinterflop_vprec_la_LIBADD += @INTERFLOP_STDLIB_PATH@/lib/libinterflop_stdlib.la
 endif
-libinterflop_vprec_la_includedir =$(includedir)/
-libinterflop_vprec_la_HEADER = interflop.h interflop_stdlib.h
-nobase_HEADERS = interflop_vprec.h common/vprec_tools.h
+headersdir = $(includedir)/
+nobase_headers_HEADERS = interflop_vprec.h common/vprec_tools.h
