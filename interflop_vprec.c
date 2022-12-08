@@ -26,15 +26,6 @@
 //
 
 #include <argp.h>
-// #include <err.h>
-// #include <limits.h>
-// #include <math.h>
-// #include <stdbool.h>
-// #include <stdint.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <strings.h>
 
 #include "interflop-stdlib/interflop_stdlib.h"
 
@@ -42,7 +33,7 @@
 #include "interflop-stdlib/common/float_const.h"
 #include "interflop-stdlib/common/float_struct.h"
 #include "interflop-stdlib/common/float_utils.h"
-#include "interflop-stdlib/fma/fmaqApprox.h"
+#include "interflop-stdlib/fma/interflop_fma.h"
 #include "interflop-stdlib/hashmap/vfc_hashmap.h"
 #include "interflop-stdlib/interflop.h"
 #include "interflop-stdlib/iostream/logger.h"
@@ -255,7 +246,9 @@ void _set_vprec_ftz(bool ftz, vprec_context_t *ctx) { ctx->ftz = ftz; }
  * The following functions are used to set virtual precision,
  * VPREC mode of operation and instrumentation mode.
  ***************************************************************/
-
+extern int compute_absErr_vprec_binary32(bool isDenormal,
+                                         vprec_context_t *currentContext,
+                                         int expDiff, int binary32_precision);
 inline int compute_absErr_vprec_binary32(bool isDenormal,
                                          vprec_context_t *currentContext,
                                          int expDiff, int binary32_precision) {
@@ -292,7 +285,9 @@ inline int compute_absErr_vprec_binary32(bool isDenormal,
     }
   }
 }
-
+extern int compute_absErr_vprec_binary64(bool isDenormal,
+                                         vprec_context_t *currentContext,
+                                         int expDiff, int binary64_precision);
 inline int compute_absErr_vprec_binary64(bool isDenormal,
                                          vprec_context_t *currentContext,
                                          int expDiff, int binary64_precision) {
@@ -330,6 +325,9 @@ inline int compute_absErr_vprec_binary64(bool isDenormal,
   }
 }
 
+extern float handle_binary32_normal_absErr(float a, int32_t aexp,
+                                           int binary32_precision,
+                                           vprec_context_t *currentContext);
 inline float handle_binary32_normal_absErr(float a, int32_t aexp,
                                            int binary32_precision,
                                            vprec_context_t *currentContext) {
@@ -356,6 +354,9 @@ inline float handle_binary32_normal_absErr(float a, int32_t aexp,
   return retVal;
 }
 
+extern double handle_binary64_normal_absErr(double a, int64_t aexp,
+                                            int binary64_precision,
+                                            vprec_context_t *currentContext);
 inline double handle_binary64_normal_absErr(double a, int64_t aexp,
                                             int binary64_precision,
                                             vprec_context_t *currentContext) {
@@ -390,6 +391,12 @@ inline double handle_binary64_normal_absErr(double a, int64_t aexp,
  * is set.
  *******************************************************************/
 
+#define PERFORM_FMA(A, B, C)                                                   \
+  _Generic(A, float                                                            \
+           : interflop_fma_binary32, double                                    \
+           : interflop_fma_binary64, __float128                                \
+           : interflop_fma_binary128)(A, B, C)
+
 /* perform_binary_op: applies the binary operator (op) to (a) and (b) */
 /* and stores the result in (res) */
 #define perform_binary_op(op, res, a, b)                                       \
@@ -415,7 +422,7 @@ inline double handle_binary64_normal_absErr(double a, int64_t aexp,
 #define perform_ternary_op(op, res, a, b, c)                                   \
   switch (op) {                                                                \
   case vprec_fma:                                                              \
-    res = fmaApprox((a), (b), (c));                                            \
+    res = PERFORM_FMA((a), (b), (c));                                          \
     break;                                                                     \
   default:                                                                     \
     logger_error("invalid operator %c", op);                                   \
