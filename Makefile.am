@@ -6,7 +6,10 @@ libinterflop_vprec_la_SOURCES = \
     interflop_vprec.c \
     interflop_vprec_function_instrumentation.c \
     @INTERFLOP_STDLIB_PATH@/include/interflop-stdlib/iostream/logger.c
-libinterflop_vprec_la_CFLAGS = -DBACKEND_HEADER="interflop_vprec" -fno-stack-protector -O3
+libinterflop_vprec_la_CFLAGS = \
+    -DBACKEND_HEADER="interflop_vprec" \
+    -fno-stack-protector -flto -O3
+libinterflop_vprec_la_LDFLAGS = -flto -O3
 if WALL_CFLAGS
 libinterflop_vprec_la_CFLAGS += -Wall -Wextra -Wno-varargs -g
 endif
